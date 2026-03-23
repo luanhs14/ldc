@@ -76,6 +76,7 @@ model Pessoa {
   congregacaoId          String? @map("congregacao_id")
   autorizadoAltoRisco    Boolean @default(false) @map("autorizado_alto_risco")
   observacoesAutorizacao String? @map("observacoes_autorizacao")
+  especialidades         String? @map("especialidades")
 
   congregacao Congregacao?       @relation(fields: [congregacaoId], references: [id])
   funcoes     PessoaFuncao[]
