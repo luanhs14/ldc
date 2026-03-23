@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import api from '../services/api'
 import type { Pessoa, Salao } from '../types'
 import { FUNCAO_LABELS, ESPECIALIDADE_LABELS } from '../types'
@@ -12,6 +12,7 @@ export default function PessoasPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editando, setEditando] = useState<Pessoa | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
   const [erro, setErro] = useState('')
 
   const [form, setForm] = useState({
@@ -49,6 +50,7 @@ export default function PessoasPage() {
       especialidades: p.especialidades ? p.especialidades.split(',') : [],
     })
     setShowForm(true)
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   const toggleEspecialidade = (e: string) => {
@@ -126,7 +128,7 @@ export default function PessoasPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-gray-700">{editando ? 'Editar pessoa' : 'Nova pessoa'}</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
