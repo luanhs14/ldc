@@ -14,7 +14,7 @@ pessoasRouter.get('/', async (req: AuthRequest, res: Response) => {
 
     const pessoas = await prisma.pessoa.findMany({
       where,
-      include: { funcoes: true, congregacao: true },
+      include: { funcoes: true, congregacao: true, saloes: { include: { salao: true } } },
       orderBy: { nome: 'asc' },
     });
     res.json(pessoas);
@@ -38,7 +38,7 @@ pessoasRouter.get('/:id', async (req: AuthRequest, res: Response) => {
 
 pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes } = req.body;
+    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes, salaoIds, especialidades } = req.body;
     if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
 
     const pessoa = await prisma.pessoa.create({
@@ -46,9 +46,11 @@ pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
         nome, telefone, email, congregacaoId,
         autorizadoAltoRisco: autorizadoAltoRisco || false,
         observacoesAutorizacao,
+        especialidades: especialidades?.length ? especialidades.join(',') : null,
         funcoes: funcoes?.length ? { create: funcoes.map((f: string) => ({ funcao: f })) } : undefined,
+        saloes: salaoIds?.length ? { create: salaoIds.map((id: string) => ({ salaoId: id })) } : undefined,
       },
-      include: { funcoes: true },
+      include: { funcoes: true, saloes: { include: { salao: true } } },
     });
     res.status(201).json(pessoa);
   } catch (e) {
@@ -58,7 +60,7 @@ pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
 
 pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes } = req.body;
+    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes, salaoIds, especialidades } = req.body;
     const data: any = {};
     if (nome !== undefined) data.nome = nome;
     if (telefone !== undefined) data.telefone = telefone;
@@ -66,13 +68,19 @@ pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     if (congregacaoId !== undefined) data.congregacaoId = congregacaoId;
     if (autorizadoAltoRisco !== undefined) data.autorizadoAltoRisco = autorizadoAltoRisco;
     if (observacoesAutorizacao !== undefined) data.observacoesAutorizacao = observacoesAutorizacao;
+    if (especialidades !== undefined) data.especialidades = especialidades?.length ? especialidades.join(',') : null;
 
     if (funcoes !== undefined) {
       await prisma.pessoaFuncao.deleteMany({ where: { pessoaId: req.params.id } });
       data.funcoes = { create: funcoes.map((f: string) => ({ funcao: f })) };
     }
 
-    const pessoa = await prisma.pessoa.update({ where: { id: req.params.id }, data, include: { funcoes: true } });
+    if (salaoIds !== undefined) {
+      await prisma.salaoResponsavel.deleteMany({ where: { pessoaId: req.params.id } });
+      data.saloes = salaoIds.length ? { create: salaoIds.map((id: string) => ({ salaoId: id })) } : undefined;
+    }
+
+    const pessoa = await prisma.pessoa.update({ where: { id: req.params.id }, data, include: { funcoes: true, saloes: { include: { salao: true } } } });
     res.json(pessoa);
   } catch (e: any) {
     if (e.code === 'P2025') return res.status(404).json({ error: 'Pessoa não encontrada' });

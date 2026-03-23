@@ -29,8 +29,18 @@ export interface Pessoa {
   congregacaoId?: string
   autorizadoAltoRisco: boolean
   observacoesAutorizacao?: string
+  especialidades?: string
   funcoes: PessoaFuncao[]
   congregacao?: Congregacao
+  saloes?: SalaoResponsavel[]
+}
+
+export const ESPECIALIDADE_LABELS: Record<string, string> = {
+  AUDIO_VIDEO: 'Áudio e Vídeo',
+  CFTV: 'CFTV',
+  AR_CONDICIONADO: 'Ar-Condicionado',
+  ALTURA: 'Altura',
+  TELHADO: 'Telhado',
 }
 
 export interface PessoaFuncao {
@@ -45,6 +55,7 @@ export interface SalaoResponsavel {
   pessoaId: string
   papel?: string
   pessoa: Pessoa
+  salao: Salao
 }
 
 export interface ElementoTipo {
