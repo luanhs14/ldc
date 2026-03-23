@@ -1,0 +1,91 @@
+import { Router, Response } from 'express';
+import { prisma } from '../models/prisma';
+import { authMiddleware, AuthRequest } from '../middlewares/auth';
+
+export const pessoasRouter = Router();
+pessoasRouter.use(authMiddleware);
+
+pessoasRouter.get('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const { busca, funcao } = req.query;
+    const where: any = {};
+    if (busca) where.nome = { contains: String(busca) };
+    if (funcao) where.funcoes = { some: { funcao: String(funcao) } };
+
+    const pessoas = await prisma.pessoa.findMany({
+      where,
+      include: { funcoes: true, congregacao: true },
+      orderBy: { nome: 'asc' },
+    });
+    res.json(pessoas);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao listar pessoas' });
+  }
+});
+
+pessoasRouter.get('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const pessoa = await prisma.pessoa.findUnique({
+      where: { id: req.params.id },
+      include: { funcoes: true, congregacao: true, saloes: { include: { salao: true } } },
+    });
+    if (!pessoa) return res.status(404).json({ error: 'Pessoa não encontrada' });
+    res.json(pessoa);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao buscar pessoa' });
+  }
+});
+
+pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes } = req.body;
+    if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
+
+    const pessoa = await prisma.pessoa.create({
+      data: {
+        nome, telefone, email, congregacaoId,
+        autorizadoAltoRisco: autorizadoAltoRisco || false,
+        observacoesAutorizacao,
+        funcoes: funcoes?.length ? { create: funcoes.map((f: string) => ({ funcao: f })) } : undefined,
+      },
+      include: { funcoes: true },
+    });
+    res.status(201).json(pessoa);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao criar pessoa' });
+  }
+});
+
+pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes } = req.body;
+    const data: any = {};
+    if (nome !== undefined) data.nome = nome;
+    if (telefone !== undefined) data.telefone = telefone;
+    if (email !== undefined) data.email = email;
+    if (congregacaoId !== undefined) data.congregacaoId = congregacaoId;
+    if (autorizadoAltoRisco !== undefined) data.autorizadoAltoRisco = autorizadoAltoRisco;
+    if (observacoesAutorizacao !== undefined) data.observacoesAutorizacao = observacoesAutorizacao;
+
+    if (funcoes !== undefined) {
+      await prisma.pessoaFuncao.deleteMany({ where: { pessoaId: req.params.id } });
+      data.funcoes = { create: funcoes.map((f: string) => ({ funcao: f })) };
+    }
+
+    const pessoa = await prisma.pessoa.update({ where: { id: req.params.id }, data, include: { funcoes: true } });
+    res.json(pessoa);
+  } catch (e: any) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Pessoa não encontrada' });
+    res.status(500).json({ error: 'Erro ao atualizar pessoa' });
+  }
+});
+
+pessoasRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.pessoa.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (e: any) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Pessoa não encontrada' });
+    res.status(500).json({ error: 'Erro ao excluir pessoa' });
+  }
+});

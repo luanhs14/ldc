@@ -1,0 +1,97 @@
+import { Router, Response } from 'express';
+import { prisma } from '../models/prisma';
+import { authMiddleware, AuthRequest } from '../middlewares/auth';
+
+export const visitasRouter = Router();
+visitasRouter.use(authMiddleware);
+
+visitasRouter.get('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const { salaoId, tipo } = req.query;
+    const where: any = {};
+    if (salaoId) where.salaoId = String(salaoId);
+    if (tipo) where.tipo = String(tipo);
+
+    const visitas = await prisma.visita.findMany({
+      where,
+      include: {
+        congregacao: true,
+        visitante: { select: { id: true, nome: true } },
+        _count: { select: { pendencias: true } },
+      },
+      orderBy: { data: 'desc' },
+    });
+    res.json(visitas);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao listar visitas' });
+  }
+});
+
+visitasRouter.get('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const visita = await prisma.visita.findUnique({
+      where: { id: req.params.id },
+      include: {
+        congregacao: true,
+        visitante: true,
+        pendencias: { include: { elemento: { include: { elementoTipo: true } } } },
+        servicos: { include: { epis: { include: { epi: true } }, analiseRisco: true } },
+        incidentes: true,
+      },
+    });
+    if (!visita) return res.status(404).json({ error: 'Visita não encontrada' });
+    res.json(visita);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao buscar visita' });
+  }
+});
+
+visitasRouter.post('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const { salaoId, tipo, data, visitanteId, visitanteNome, congregacaoId, relatorio } = req.body;
+    if (!salaoId || !tipo || !data) return res.status(400).json({ error: 'salaoId, tipo e data são obrigatórios' });
+
+    const visita = await prisma.visita.create({
+      data: {
+        salaoId, tipo,
+        data: new Date(data),
+        visitanteId: visitanteId || null,
+        visitanteNome: visitanteNome || null,
+        congregacaoId: congregacaoId || null,
+        relatorio,
+      },
+    });
+    res.status(201).json(visita);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao criar visita' });
+  }
+});
+
+visitasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const { tipo, data, visitanteId, visitanteNome, congregacaoId, relatorio } = req.body;
+    const update: any = {};
+    if (tipo !== undefined) update.tipo = tipo;
+    if (data !== undefined) update.data = new Date(data);
+    if (visitanteId !== undefined) update.visitanteId = visitanteId || null;
+    if (visitanteNome !== undefined) update.visitanteNome = visitanteNome || null;
+    if (congregacaoId !== undefined) update.congregacaoId = congregacaoId || null;
+    if (relatorio !== undefined) update.relatorio = relatorio;
+
+    const visita = await prisma.visita.update({ where: { id: req.params.id }, data: update });
+    res.json(visita);
+  } catch (e: any) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Visita não encontrada' });
+    res.status(500).json({ error: 'Erro ao atualizar visita' });
+  }
+});
+
+visitasRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.visita.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (e: any) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Visita não encontrada' });
+    res.status(500).json({ error: 'Erro ao excluir visita' });
+  }
+});

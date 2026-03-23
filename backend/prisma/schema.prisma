@@ -1,0 +1,404 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Usuários do sistema ───────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  nome      String
+  usuario   String   @unique
+  senhaHash String   @map("senha_hash")
+  role      String   @default("OPERADOR") // ADMIN | OPERADOR
+  pessoaId  String?  @unique @map("pessoa_id")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  pessoa Pessoa? @relation(fields: [pessoaId], references: [id])
+
+  @@map("users")
+}
+
+// ─── Salão do Reino ────────────────────────────────────────────────────────
+
+model Salao {
+  id                String    @id @default(uuid())
+  congregacao       String   @map("nome")
+  codigoBRA         String    @unique @map("codigo_bra")
+  bairro            String?
+  endereco          String?
+  dataConstrucao    DateTime? @map("data_construcao")
+  dataUltimaReforma DateTime? @map("data_ultima_reforma")
+  observacoes       String?
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  congregacoes Congregacao[]
+  responsaveis SalaoResponsavel[]
+  elementos    Elemento[]
+  avaliacoes   Avaliacao[]
+  visitas      Visita[]
+  pendencias   Pendencia[]
+  servicos     ServicoAltoRisco[]
+  incidentes   Incidente[]
+  cronogramas  CronogramaAnual[]
+  orcamentos   OrcamentoAnual[]
+  lancamentos  LancamentoCusto[]
+
+  @@map("saloes")
+}
+
+// ─── Congregações ──────────────────────────────────────────────────────────
+
+model Congregacao {
+  id      String @id @default(uuid())
+  nome    String
+  salaoId String @map("salao_id")
+
+  salao   Salao    @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  pessoas Pessoa[]
+  visitas Visita[]
+
+  @@map("congregacoes")
+}
+
+// ─── Pessoas ───────────────────────────────────────────────────────────────
+
+model Pessoa {
+  id                     String  @id @default(uuid())
+  nome                   String
+  telefone               String?
+  email                  String?
+  congregacaoId          String? @map("congregacao_id")
+  autorizadoAltoRisco    Boolean @default(false) @map("autorizado_alto_risco")
+  observacoesAutorizacao String? @map("observacoes_autorizacao")
+
+  congregacao Congregacao?       @relation(fields: [congregacaoId], references: [id])
+  funcoes     PessoaFuncao[]
+  saloes      SalaoResponsavel[]
+  visitas     Visita[]
+  user        User?
+
+  @@map("pessoas")
+}
+
+model PessoaFuncao {
+  id       String @id @default(uuid())
+  pessoaId String @map("pessoa_id")
+  funcao   String // LDC | REC | TM | ANCIAO | RESPONSAVEL_MANUTENCAO | VOLUNTARIO | OUTRO
+
+  pessoa Pessoa @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@unique([pessoaId, funcao])
+  @@map("pessoa_funcoes")
+}
+
+model SalaoResponsavel {
+  id       String  @id @default(uuid())
+  salaoId  String  @map("salao_id")
+  pessoaId String  @map("pessoa_id")
+  papel    String?
+
+  salao  Salao  @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  pessoa Pessoa @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@unique([salaoId, pessoaId])
+  @@map("salao_responsaveis")
+}
+
+// ─── Tipos de Elemento (tabela mestre) ─────────────────────────────────────
+
+model ElementoTipo {
+  id                 String @id @default(uuid())
+  codigo             String @unique
+  nome               String
+  vidaUtilPadraoAnos Int?   @map("vida_util_padrao_anos")
+
+  elementos Elemento[]
+
+  @@map("elemento_tipos")
+}
+
+// ─── Elementos do prédio ───────────────────────────────────────────────────
+
+model Elemento {
+  id                String    @id @default(uuid())
+  salaoId           String    @map("salao_id")
+  elementoTipoId    String    @map("elemento_tipo_id")
+  nomeCustomizado   String?   @map("nome_customizado")
+  dataInstalacao    DateTime? @map("data_instalacao")
+  condicaoAtual     String    @default("BOM") @map("condicao_atual") // OTIMO | BOM | REGULAR | RUIM | CRITICO
+  vidaUtilAnos      Int?      @map("vida_util_anos")
+  proximaManutencao DateTime? @map("proxima_manutencao")
+  observacoes       String?
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  salao              Salao               @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  elementoTipo       ElementoTipo        @relation(fields: [elementoTipoId], references: [id])
+  equipamentos       Equipamento[]
+  pendencias         Pendencia[]
+  lancamentos        LancamentoCusto[]
+  avaliacaoElementos AvaliacaoElemento[]
+
+  @@map("elementos")
+}
+
+// ─── Equipamentos ──────────────────────────────────────────────────────────
+
+model Equipamento {
+  id                String    @id @default(uuid())
+  elementoId        String    @map("elemento_id")
+  nome              String
+  modelo            String?
+  fabricante        String?
+  dataInstalacao    DateTime? @map("data_instalacao")
+  garantiaAte       DateTime? @map("garantia_ate")
+  proximaManutencao DateTime? @map("proxima_manutencao")
+  observacoes       String?
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  elemento   Elemento    @relation(fields: [elementoId], references: [id], onDelete: Cascade)
+  pendencias Pendencia[]
+
+  @@map("equipamentos")
+}
+
+// ─── Avaliações (DC-96 / DC-97) ───────────────────────────────────────────
+
+model Avaliacao {
+  id          String   @id @default(uuid())
+  salaoId     String   @map("salao_id")
+  tipo        String   // DC96 | DC97 | AMBOS
+  data        DateTime
+  avaliador   String
+  observacoes String?
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  salao      Salao               @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  elementos  AvaliacaoElemento[]
+  pendencias Pendencia[]
+
+  @@map("avaliacoes")
+}
+
+model AvaliacaoElemento {
+  id                   String    @id @default(uuid())
+  avaliacaoId          String    @map("avaliacao_id")
+  elementoId           String    @map("elemento_id")
+  condicao             String    // OTIMO | BOM | REGULAR | RUIM | CRITICO
+  previsaoSubstituicao DateTime? @map("previsao_substituicao")
+  planejamentoReforma  String?   @map("planejamento_reforma")
+  observacoes          String?
+
+  avaliacao Avaliacao @relation(fields: [avaliacaoId], references: [id], onDelete: Cascade)
+  elemento  Elemento  @relation(fields: [elementoId], references: [id], onDelete: Cascade)
+
+  @@unique([avaliacaoId, elementoId])
+  @@map("avaliacao_elementos")
+}
+
+// ─── Visitas ───────────────────────────────────────────────────────────────
+
+model Visita {
+  id            String   @id @default(uuid())
+  salaoId       String   @map("salao_id")
+  tipo          String   // MANUTENCAO | VISITA_TM | AVALIACAO_LDC | INSPECAO_TECNICA
+  data          DateTime
+  visitanteId   String?  @map("visitante_id")
+  visitanteNome String?  @map("visitante_nome")
+  congregacaoId String?  @map("congregacao_id")
+  relatorio     String?
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  salao       Salao        @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  visitante   Pessoa?      @relation(fields: [visitanteId], references: [id])
+  congregacao Congregacao? @relation(fields: [congregacaoId], references: [id])
+  pendencias  Pendencia[]
+  servicos    ServicoAltoRisco[]
+  incidentes  Incidente[]
+
+  @@map("visitas")
+}
+
+// ─── Pendências ────────────────────────────────────────────────────────────
+
+model Pendencia {
+  id            String    @id @default(uuid())
+  salaoId       String    @map("salao_id")
+  avaliacaoId   String?   @map("avaliacao_id")
+  visitaId      String?   @map("visita_id")
+  elementoId    String?   @map("elemento_id")
+  equipamentoId String?   @map("equipamento_id")
+  descricao     String
+  prioridade    String    @default("MEDIA") // BAIXA | MEDIA | ALTA
+  risco         String?   // BAIXO | MEDIO | ALTO
+  responsavel   String?
+  dataLimite    DateTime? @map("data_limite")
+  status        String    @default("PENDENTE") // PENDENTE | EM_ANDAMENTO | CONCLUIDO | CANCELADO
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  concluidoEm   DateTime? @map("concluido_em")
+
+  salao       Salao        @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  avaliacao   Avaliacao?   @relation(fields: [avaliacaoId], references: [id])
+  visita      Visita?      @relation(fields: [visitaId], references: [id])
+  elemento    Elemento?    @relation(fields: [elementoId], references: [id])
+  equipamento Equipamento? @relation(fields: [equipamentoId], references: [id])
+  lancamentos LancamentoCusto[]
+
+  @@map("pendencias")
+}
+
+// ─── Serviços de Alto Risco ────────────────────────────────────────────────
+
+model ServicoAltoRisco {
+  id                      String   @id @default(uuid())
+  salaoId                 String   @map("salao_id")
+  visitaId                String?  @map("visita_id")
+  pendenciaId             String?  @map("pendencia_id")
+  tipo                    String   // ALTURA | ESCAVACAO | DEMOLICAO | ELETRICA | EQUIPAMENTO_PESADO | OUTRO
+  descricao               String
+  autorizadoPor           String?  @map("autorizado_por")
+  treinamentosNecessarios String?  @map("treinamentos_necessarios")
+  data                    DateTime
+  status                  String   @default("PLANEJADO") // PLANEJADO | EM_ANDAMENTO | CONCLUIDO
+
+  salao        Salao         @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  visita       Visita?       @relation(fields: [visitaId], references: [id])
+  analiseRisco AnaliseRisco?
+  epis         ServicoEpi[]
+  incidentes   Incidente[]
+
+  @@map("servicos_alto_risco")
+}
+
+model AnaliseRisco {
+  id                  String   @id @default(uuid())
+  servicoId           String   @unique @map("servico_id")
+  riscosIdentificados String   @map("riscos_identificados")
+  medidasControle     String   @map("medidas_controle")
+  responsavel         String
+  data                DateTime
+
+  servico ServicoAltoRisco @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+
+  @@map("analises_risco")
+}
+
+// ─── EPIs ──────────────────────────────────────────────────────────────────
+
+model Epi {
+  id     String @id @default(uuid())
+  codigo String @unique
+  nome   String
+
+  servicos ServicoEpi[]
+
+  @@map("epis")
+}
+
+model ServicoEpi {
+  servicoId String @map("servico_id")
+  epiId     String @map("epi_id")
+
+  servico ServicoAltoRisco @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  epi     Epi              @relation(fields: [epiId], references: [id])
+
+  @@id([servicoId, epiId])
+  @@map("servico_epis")
+}
+
+// ─── Incidentes ────────────────────────────────────────────────────────────
+
+model Incidente {
+  id            String   @id @default(uuid())
+  salaoId       String   @map("salao_id")
+  visitaId      String?  @map("visita_id")
+  servicoId     String?  @map("servico_id")
+  data          DateTime
+  local         String
+  tipo          String   // LESAO | QUASE_ACIDENTE | SITUACAO_PERIGOSA
+  descricao     String
+  gravidade     String   // BAIXA | MEDIA | ALTA
+  acaoCorretiva String?  @map("acao_corretiva")
+  status        String   @default("ABERTO") // ABERTO | RESOLVIDO
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  salao   Salao             @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  visita  Visita?           @relation(fields: [visitaId], references: [id])
+  servico ServicoAltoRisco? @relation(fields: [servicoId], references: [id])
+
+  @@map("incidentes")
+}
+
+// ─── Cronograma Anual ──────────────────────────────────────────────────────
+
+model PeriodoManutencao {
+  id          String  @id @default(uuid())
+  codigo      String  @unique
+  nome        String
+  mesInicio   Int     @map("mes_inicio")
+  mesFim      Int     @map("mes_fim")
+  descricao   String?
+
+  cronogramas CronogramaAnual[]
+
+  @@map("periodos_manutencao")
+}
+
+model CronogramaAnual {
+  id          String  @id @default(uuid())
+  salaoId     String  @map("salao_id")
+  periodoId   String  @map("periodo_id")
+  ano         Int
+  status      String  @default("AGUARDANDO") // AGUARDANDO | EM_ANDAMENTO | CONCLUIDO
+  observacoes String?
+
+  salao   Salao             @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  periodo PeriodoManutencao @relation(fields: [periodoId], references: [id])
+
+  @@unique([salaoId, periodoId, ano])
+  @@map("cronogramas_anuais")
+}
+
+// ─── Financeiro ────────────────────────────────────────────────────────────
+
+model OrcamentoAnual {
+  id                String  @id @default(uuid())
+  salaoId           String  @map("salao_id")
+  ano               Int
+  orcamentoPrevisto Float   @map("orcamento_previsto")
+  saldoReserva      Float   @default(0) @map("saldo_reserva")
+  observacoes       String?
+
+  salao       Salao             @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  lancamentos LancamentoCusto[]
+
+  @@unique([salaoId, ano])
+  @@map("orcamentos_anuais")
+}
+
+model LancamentoCusto {
+  id               String   @id @default(uuid())
+  salaoId          String   @map("salao_id")
+  orcamentoAnualId String?  @map("orcamento_anual_id")
+  pendenciaId      String?  @map("pendencia_id")
+  elementoId       String?  @map("elemento_id")
+  descricao        String
+  valor            Float
+  data             DateTime
+  categoria        String   // MATERIAL | MAO_DE_OBRA | SERVICO_TERCEIRO | OUTRO
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  salao          Salao           @relation(fields: [salaoId], references: [id], onDelete: Cascade)
+  orcamentoAnual OrcamentoAnual? @relation(fields: [orcamentoAnualId], references: [id])
+  pendencia      Pendencia?      @relation(fields: [pendenciaId], references: [id])
+  elemento       Elemento?       @relation(fields: [elementoId], references: [id])
+
+  @@map("lancamentos_custo")
+}
