@@ -23,6 +23,18 @@ export default function SalaoDetail() {
     descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
   })
 
+  // Edição inline de pendência
+  const [editandoPendencia, setEditandoPendencia] = useState<string | null>(null)
+  const [editPendenciaForm, setEditPendenciaForm] = useState({
+    descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
+  })
+
+  // Edição inline de visita
+  const [editandoVisita, setEditandoVisita] = useState<string | null>(null)
+  const [editVisitaForm, setEditVisitaForm] = useState({
+    tipo: '', data: '', visitanteNome: '', relatorio: '',
+  })
+
   const fetchTudo = async () => {
     try {
       const [salaoRes, pendRes, visitRes, tiposRes] = await Promise.all([
@@ -94,6 +106,61 @@ export default function SalaoDetail() {
       await api.delete(`/saloes/${id}`)
       navigate('/saloes')
     } catch { setErro('Erro ao excluir salão') }
+  }
+
+  const handleIniciarEditPendencia = (p: Pendencia) => {
+    setEditandoPendencia(p.id)
+    setEditPendenciaForm({
+      descricao: p.descricao,
+      prioridade: p.prioridade,
+      risco: p.risco || '',
+      responsavel: p.responsavel || '',
+      dataLimite: p.dataLimite ? p.dataLimite.substring(0, 10) : '',
+      elementoId: p.elementoId || '',
+    })
+  }
+
+  const handleSalvarEditPendencia = async (pendId: string) => {
+    try {
+      await api.put(`/pendencias/${pendId}`, {
+        ...editPendenciaForm,
+        risco: editPendenciaForm.risco || null,
+        dataLimite: editPendenciaForm.dataLimite || null,
+        elementoId: editPendenciaForm.elementoId || null,
+      })
+      setEditandoPendencia(null)
+      fetchTudo()
+    } catch { setErro('Erro ao salvar pendência') }
+  }
+
+  const handleIniciarEditVisita = (v: Visita) => {
+    setEditandoVisita(v.id)
+    setEditVisitaForm({
+      tipo: v.tipo,
+      data: v.data.substring(0, 10),
+      visitanteNome: v.visitanteNome || '',
+      relatorio: v.relatorio || '',
+    })
+  }
+
+  const handleSalvarEditVisita = async (visitaId: string) => {
+    try {
+      await api.put(`/visitas/${visitaId}`, {
+        ...editVisitaForm,
+        visitanteNome: editVisitaForm.visitanteNome || null,
+        relatorio: editVisitaForm.relatorio || null,
+      })
+      setEditandoVisita(null)
+      fetchTudo()
+    } catch { setErro('Erro ao salvar visita') }
+  }
+
+  const handleDeleteVisita = async (visitaId: string) => {
+    if (!confirm('Excluir esta visita?')) return
+    try {
+      await api.delete(`/visitas/${visitaId}`)
+      fetchTudo()
+    } catch { setErro('Erro ao excluir visita') }
   }
 
   const isAtrasada = (p: Pendencia) =>
@@ -261,57 +328,117 @@ export default function SalaoDetail() {
                   const concluida = p.status === 'CONCLUIDO'
                   const atrasada = isAtrasada(p)
                   return (
-                    <li key={p.id} className={`px-5 py-4 flex items-start gap-3 group transition-colors ${atrasada ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
-                      <button
-                        onClick={() => handleTogglePendencia(p)}
-                        disabled={toggling === p.id || p.status === 'CANCELADO'}
-                        className={`mt-0.5 w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center transition-all ${
-                          concluida ? 'bg-green-500 border-green-500 text-white' :
-                          atrasada ? 'border-red-300 hover:border-red-400' :
-                          'border-gray-300 hover:border-blue-400'
-                        } ${toggling === p.id ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
-                      >
-                        {concluida && (
-                          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        )}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm leading-relaxed ${concluida ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                          {p.descricao}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORIDADE_COLORS[p.prioridade]}`}>
-                            {p.prioridade}
-                          </span>
-                          {p.elemento && (
-                            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                              {p.elemento.elementoTipo?.nome}
-                            </span>
-                          )}
-                          {p.responsavel && <span className="text-xs text-gray-400">👤 {p.responsavel}</span>}
-                          {p.dataLimite && !concluida && (
-                            <span className={`text-xs ${atrasada ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                              {atrasada ? '⚠ ' : '📅 '}{new Date(p.dataLimite).toLocaleDateString('pt-BR')}
-                            </span>
-                          )}
-                          {p.risco && (
-                            <span className={`text-xs font-medium ${p.risco === 'ALTO' ? 'text-red-500' : p.risco === 'MEDIO' ? 'text-amber-500' : 'text-green-500'}`}>
-                              ● Risco {p.risco.toLowerCase()}
-                            </span>
-                          )}
-                          {p.concluidoEm && (
-                            <span className="text-xs text-green-500">✓ {new Date(p.concluidoEm).toLocaleDateString('pt-BR')}</span>
-                          )}
+                    <li key={p.id} className={`px-5 py-4 transition-colors ${editandoPendencia === p.id ? 'bg-blue-50' : atrasada ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                      {editandoPendencia === p.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editPendenciaForm.descricao}
+                            onChange={(e) => setEditPendenciaForm((f) => ({ ...f, descricao: e.target.value }))}
+                            className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            rows={2} autoFocus
+                          />
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <select value={editPendenciaForm.prioridade}
+                              onChange={(e) => setEditPendenciaForm((f) => ({ ...f, prioridade: e.target.value }))}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                              <option value="BAIXA">Prioridade Baixa</option>
+                              <option value="MEDIA">Prioridade Média</option>
+                              <option value="ALTA">Prioridade Alta</option>
+                            </select>
+                            <select value={editPendenciaForm.risco}
+                              onChange={(e) => setEditPendenciaForm((f) => ({ ...f, risco: e.target.value }))}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                              <option value="">Sem risco</option>
+                              <option value="BAIXO">Risco baixo</option>
+                              <option value="MEDIO">Risco médio</option>
+                              <option value="ALTO">Risco alto</option>
+                            </select>
+                            <select value={editPendenciaForm.elementoId}
+                              onChange={(e) => setEditPendenciaForm((f) => ({ ...f, elementoId: e.target.value }))}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                              <option value="">Elemento (opcional)</option>
+                              {elementos.map((el) => (
+                                <option key={el.id} value={el.id}>{el.elementoTipo?.nome || el.nomeCustomizado}</option>
+                              ))}
+                            </select>
+                            <input type="text" placeholder="Responsável"
+                              value={editPendenciaForm.responsavel}
+                              onChange={(e) => setEditPendenciaForm((f) => ({ ...f, responsavel: e.target.value }))}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input type="date"
+                              value={editPendenciaForm.dataLimite}
+                              onChange={(e) => setEditPendenciaForm((f) => ({ ...f, dataLimite: e.target.value }))}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleSalvarEditPendencia(p.id)}
+                              className="bg-blue-600 text-white text-xs font-medium px-4 py-1.5 rounded-lg hover:bg-blue-700">
+                              Salvar
+                            </button>
+                            <button onClick={() => setEditandoPendencia(null)}
+                              className="bg-gray-100 text-gray-600 text-xs font-medium px-4 py-1.5 rounded-lg hover:bg-gray-200">
+                              Cancelar
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <button onClick={() => handleDeletePendencia(p.id)}
-                        className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
-                        <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-                          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
+                      ) : (
+                        <div className="flex items-start gap-3 group">
+                          <button
+                            onClick={() => handleTogglePendencia(p)}
+                            disabled={toggling === p.id || p.status === 'CANCELADO'}
+                            className={`mt-0.5 w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center transition-all ${
+                              concluida ? 'bg-green-500 border-green-500 text-white' :
+                              atrasada ? 'border-red-300 hover:border-red-400' :
+                              'border-gray-300 hover:border-blue-400'
+                            } ${toggling === p.id ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+                          >
+                            {concluida && (
+                              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
+                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm leading-relaxed ${concluida ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                              {p.descricao}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORIDADE_COLORS[p.prioridade]}`}>
+                                {p.prioridade}
+                              </span>
+                              {p.elemento && (
+                                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                  {p.elemento.elementoTipo?.nome}
+                                </span>
+                              )}
+                              {p.responsavel && <span className="text-xs text-gray-400">👤 {p.responsavel}</span>}
+                              {p.dataLimite && !concluida && (
+                                <span className={`text-xs ${atrasada ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                                  {atrasada ? '⚠ ' : ''}{new Date(p.dataLimite).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                              {p.risco && (
+                                <span className={`text-xs font-medium ${p.risco === 'ALTO' ? 'text-red-500' : p.risco === 'MEDIO' ? 'text-amber-500' : 'text-green-500'}`}>
+                                  ● Risco {p.risco.toLowerCase()}
+                                </span>
+                              )}
+                              {p.concluidoEm && (
+                                <span className="text-xs text-green-500">✓ {new Date(p.concluidoEm).toLocaleDateString('pt-BR')}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
+                            <button onClick={() => handleIniciarEditPendencia(p)}
+                              className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded border border-gray-200 hover:border-blue-300">
+                              Editar
+                            </button>
+                            <button onClick={() => handleDeletePendencia(p.id)}
+                              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-200">
+                              Excluir
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   )
                 })}
@@ -386,25 +513,75 @@ export default function SalaoDetail() {
             ) : (
               <ul className="divide-y divide-gray-50">
                 {visitas.map((v) => (
-                  <li key={v.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-800">
-                          {VISITA_TIPO_LABELS[v.tipo] || v.tipo}
-                        </span>
-                        {v._count && v._count.pendencias > 0 && (
-                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
-                            {v._count.pendencias} pendência{v._count.pendencias !== 1 ? 's' : ''}
-                          </span>
-                        )}
+                  <li key={v.id} className={`transition-colors ${editandoVisita === v.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                    {editandoVisita === v.id ? (
+                      <div className="px-5 py-4 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <select value={editVisitaForm.tipo}
+                            onChange={(e) => setEditVisitaForm((f) => ({ ...f, tipo: e.target.value }))}
+                            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            {Object.entries(VISITA_TIPO_LABELS).map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
+                          </select>
+                          <input type="date" value={editVisitaForm.data}
+                            onChange={(e) => setEditVisitaForm((f) => ({ ...f, data: e.target.value }))}
+                            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          <input type="text" placeholder="Nome do visitante"
+                            value={editVisitaForm.visitanteNome}
+                            onChange={(e) => setEditVisitaForm((f) => ({ ...f, visitanteNome: e.target.value }))}
+                            className="col-span-2 px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          <textarea placeholder="Relatório (opcional)"
+                            value={editVisitaForm.relatorio}
+                            onChange={(e) => setEditVisitaForm((f) => ({ ...f, relatorio: e.target.value }))}
+                            className="col-span-2 px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            rows={2} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleSalvarEditVisita(v.id)}
+                            className="bg-blue-600 text-white text-xs font-medium px-4 py-1.5 rounded-lg hover:bg-blue-700">
+                            Salvar
+                          </button>
+                          <button onClick={() => setEditandoVisita(null)}
+                            className="bg-gray-100 text-gray-600 text-xs font-medium px-4 py-1.5 rounded-lg hover:bg-gray-200">
+                            Cancelar
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {new Date(v.data).toLocaleDateString('pt-BR')}
-                        {v.visitanteNome && ` · ${v.visitanteNome}`}
-                        {v.congregacao && ` · ${v.congregacao.nome}`}
-                      </p>
-                    </div>
-                    <Link to={`/visitas/${v.id}`} className="text-xs text-blue-500 hover:text-blue-700">Ver →</Link>
+                    ) : (
+                      <div className="px-5 py-3 flex items-center justify-between group">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-800">
+                              {VISITA_TIPO_LABELS[v.tipo] || v.tipo}
+                            </span>
+                            {v._count && v._count.pendencias > 0 && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                                {v._count.pendencias} pendência{v._count.pendencias !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(v.data).toLocaleDateString('pt-BR')}
+                            {v.visitanteNome && ` · ${v.visitanteNome}`}
+                            {v.congregacao && ` · ${v.congregacao.nome}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => handleIniciarEditVisita(v)}
+                              className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded border border-gray-200 hover:border-blue-300">
+                              Editar
+                            </button>
+                            <button onClick={() => handleDeleteVisita(v.id)}
+                              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-200">
+                              Excluir
+                            </button>
+                          </div>
+                          <Link to={`/visitas/${v.id}`} className="text-xs text-blue-500 hover:text-blue-700">Ver →</Link>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
