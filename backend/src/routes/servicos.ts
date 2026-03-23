@@ -79,8 +79,10 @@ servicosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     if (status !== undefined) update.status = status;
 
     if (epiIds !== undefined) {
-      await prisma.servicoEpi.deleteMany({ where: { servicoId: req.params.id } });
-      update.epis = { create: epiIds.map((epiId: string) => ({ epiId })) };
+      update.epis = {
+        deleteMany: {},
+        ...(epiIds.length ? { create: epiIds.map((epiId: string) => ({ epiId })) } : {}),
+      };
     }
 
     const servico = await prisma.servicoAltoRisco.update({

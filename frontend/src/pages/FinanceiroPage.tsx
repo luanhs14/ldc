@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import api from '../services/api'
 import type { Salao } from '../types'
+import PaginationControls from '../components/PaginationControls'
+import { getListMeta, type ListMeta } from '../services/pagination'
 
 interface OrcamentoAnual {
   id: string; salaoId: string; ano: number
@@ -27,6 +29,10 @@ export default function FinanceiroPage() {
   const [totalGasto, setTotalGasto] = useState(0)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState('')
+  const [pageOrc, setPageOrc] = useState(1)
+  const [pageLanc, setPageLanc] = useState(1)
+  const [metaOrc, setMetaOrc] = useState<ListMeta>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'ano', sortOrder: 'desc' })
+  const [metaLanc, setMetaLanc] = useState<ListMeta>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'data', sortOrder: 'desc' })
 
   const [filtroSalaoId, setFiltroSalaoId] = useState('')
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL)
@@ -43,21 +49,25 @@ export default function FinanceiroPage() {
     try {
       const [sRes, orcRes] = await Promise.all([
         api.get('/saloes'),
-        api.get('/financeiro/orcamentos', { params: { salaoId: filtroSalaoId || undefined, ano: filtroAno } }),
+        api.get('/financeiro/orcamentos', {
+          params: { salaoId: filtroSalaoId || undefined, ano: filtroAno, page: pageOrc, pageSize: 10, sortBy: 'ano', sortOrder: 'desc' },
+        }),
       ])
       setSaloes(sRes.data)
       setOrcamentos(orcRes.data)
+      setMetaOrc(getListMeta(orcRes.headers))
 
       const lancRes = await api.get('/financeiro/lancamentos', {
-        params: { salaoId: filtroSalaoId || undefined, ano: filtroAno },
+        params: { salaoId: filtroSalaoId || undefined, ano: filtroAno, page: pageLanc, pageSize: 10, sortBy: 'data', sortOrder: 'desc' },
       })
       setLancamentos(lancRes.data.lancamentos)
       setTotalGasto(lancRes.data.total)
+      setMetaLanc(getListMeta(lancRes.headers))
     } catch { setErro('Erro ao carregar dados financeiros') }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchTudo() }, [filtroSalaoId, filtroAno])
+  useEffect(() => { fetchTudo() }, [filtroSalaoId, filtroAno, pageOrc, pageLanc])
 
   const orcamentoSelecionado = orcamentos.find((o) => o.salaoId === filtroSalaoId) || orcamentos[0]
   const saldoDisponivel = orcamentoSelecionado
@@ -134,7 +144,7 @@ export default function FinanceiroPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex gap-3 flex-wrap">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Salão</label>
-          <select value={filtroSalaoId} onChange={(e) => setFiltroSalaoId(e.target.value)}
+          <select value={filtroSalaoId} onChange={(e) => { setPageOrc(1); setPageLanc(1); setFiltroSalaoId(e.target.value) }}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">Todos</option>
             {saloes.map((s) => <option key={s.id} value={s.id}>{s.codigoBRA} — {s.congregacao}</option>)}
@@ -142,7 +152,7 @@ export default function FinanceiroPage() {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Ano</label>
-          <select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))}
+          <select value={filtroAno} onChange={(e) => { setPageOrc(1); setPageLanc(1); setFiltroAno(Number(e.target.value)) }}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             {[ANO_ATUAL, ANO_ATUAL - 1, ANO_ATUAL - 2].map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
@@ -260,6 +270,7 @@ export default function FinanceiroPage() {
           </div>
         </div>
       )}
+      <PaginationControls meta={metaOrc} onPageChange={setPageOrc} />
 
       {/* Lançamentos */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -294,6 +305,7 @@ export default function FinanceiroPage() {
           </ul>
         )}
       </div>
+      <PaginationControls meta={metaLanc} onPageChange={setPageLanc} />
     </div>
   )
 }

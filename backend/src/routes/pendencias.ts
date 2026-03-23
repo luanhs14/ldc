@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const pendenciasRouter = Router();
 pendenciasRouter.use(authMiddleware);
@@ -8,22 +9,33 @@ pendenciasRouter.use(authMiddleware);
 pendenciasRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, status, prioridade, elementoId } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['criadoEm', 'dataLimite', 'prioridade', 'status', 'concluidoEm'] as const, 'criadoEm', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (status) where.status = String(status);
     if (prioridade) where.prioridade = String(prioridade);
     if (elementoId) where.elementoId = String(elementoId);
 
-    const pendencias = await prisma.pendencia.findMany({
-      where,
-      include: {
-        elemento: { include: { elementoTipo: true } },
-        equipamento: true,
-        visita: { select: { id: true, tipo: true, data: true } },
-        avaliacao: { select: { id: true, tipo: true, data: true } },
-      },
-      orderBy: [{ prioridade: 'desc' }, { criadoEm: 'desc' }],
-    });
+    const [total, pendencias] = await Promise.all([
+      prisma.pendencia.count({ where }),
+      prisma.pendencia.findMany({
+        where,
+        include: {
+          elemento: { include: { elementoTipo: true } },
+          equipamento: true,
+          visita: { select: { id: true, tipo: true, data: true } },
+          avaliacao: { select: { id: true, tipo: true, data: true } },
+        },
+        orderBy: sort.sortBy === 'prioridade'
+          ? [{ prioridade: sort.sortOrder }, { criadoEm: 'desc' }]
+          : { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(pendencias);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar pendências' });

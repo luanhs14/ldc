@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const avaliacoesRouter = Router();
 avaliacoesRouter.use(authMiddleware);
@@ -8,15 +9,24 @@ avaliacoesRouter.use(authMiddleware);
 avaliacoesRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, tipo } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['data', 'tipo', 'criadoEm', 'avaliador'] as const, 'data', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (tipo) where.tipo = String(tipo);
 
-    const avaliacoes = await prisma.avaliacao.findMany({
-      where,
-      include: { _count: { select: { pendencias: true, elementos: true } } },
-      orderBy: { data: 'desc' },
-    });
+    const [total, avaliacoes] = await Promise.all([
+      prisma.avaliacao.count({ where }),
+      prisma.avaliacao.findMany({
+        where,
+        include: { _count: { select: { pendencias: true, elementos: true } } },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(avaliacoes);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar avaliações' });
@@ -46,31 +56,36 @@ avaliacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'salaoId, tipo, data e avaliador são obrigatórios' });
     }
 
-    const avaliacao = await prisma.avaliacao.create({
-      data: {
-        salaoId, tipo, data: new Date(data), avaliador, observacoes,
-        elementos: elementos?.length ? {
-          create: elementos.map((e: any) => ({
-            elementoId: e.elementoId,
-            condicao: e.condicao,
-            previsaoSubstituicao: e.previsaoSubstituicao ? new Date(e.previsaoSubstituicao) : null,
-            planejamentoReforma: e.planejamentoReforma,
-            observacoes: e.observacoes,
-          })),
-        } : undefined,
-      },
-      include: { elementos: { include: { elemento: { include: { elementoTipo: true } } } } },
-    });
+    const avaliacao = await prisma.$transaction(async (tx) => {
+      const novaAvaliacao = await tx.avaliacao.create({
+        data: {
+          salaoId, tipo, data: new Date(data), avaliador, observacoes,
+          elementos: elementos?.length ? {
+            create: elementos.map((e: any) => ({
+              elementoId: e.elementoId,
+              condicao: e.condicao,
+              previsaoSubstituicao: e.previsaoSubstituicao ? new Date(e.previsaoSubstituicao) : null,
+              planejamentoReforma: e.planejamentoReforma,
+              observacoes: e.observacoes,
+            })),
+          } : undefined,
+        },
+        include: { elementos: { include: { elemento: { include: { elementoTipo: true } } } } },
+      });
 
-    // Atualiza a condição atual de cada elemento avaliado
-    if (elementos?.length) {
-      for (const e of elementos) {
-        await prisma.elemento.update({
-          where: { id: e.elementoId },
-          data: { condicaoAtual: e.condicao },
-        });
+      if (elementos?.length) {
+        await Promise.all(
+          elementos.map((e: any) =>
+            tx.elemento.update({
+              where: { id: e.elementoId },
+              data: { condicaoAtual: e.condicao },
+            })
+          )
+        );
       }
-    }
+
+      return novaAvaliacao;
+    });
 
     res.status(201).json(avaliacao);
   } catch (e) {

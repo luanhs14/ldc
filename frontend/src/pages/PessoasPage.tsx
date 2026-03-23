@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import api from '../services/api'
 import type { Pessoa, Salao } from '../types'
 import { FUNCAO_LABELS, ESPECIALIDADE_LABELS } from '../types'
+import PaginationControls from '../components/PaginationControls'
+import { getListMeta, type ListMeta } from '../services/pagination'
 
 const FUNCOES = Object.keys(FUNCAO_LABELS)
 const ESPECIALIDADES = Object.keys(ESPECIALIDADE_LABELS)
@@ -14,6 +16,8 @@ export default function PessoasPage() {
   const [editando, setEditando] = useState<Pessoa | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const [erro, setErro] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState<ListMeta>({ page: 1, pageSize: 24, totalCount: 0, totalPages: 1, sortBy: 'nome', sortOrder: 'asc' })
 
   const [form, setForm] = useState({
     nome: '', telefone: '', email: '',
@@ -23,16 +27,17 @@ export default function PessoasPage() {
   const fetchTudo = async () => {
     try {
       const [pRes, sRes] = await Promise.all([
-        api.get('/pessoas'),
+        api.get('/pessoas', { params: { page, pageSize: 24, sortBy: 'nome', sortOrder: 'asc' } }),
         api.get('/saloes'),
       ])
       setPessoas(pRes.data)
+      setMeta(getListMeta(pRes.headers))
       setSaloes(sRes.data)
     } catch { setErro('Erro ao carregar dados') }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchTudo() }, [])
+  useEffect(() => { fetchTudo() }, [page])
 
   const resetForm = () => setForm({
     nome: '', telefone: '', email: '',
@@ -121,10 +126,12 @@ export default function PessoasPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">Pessoas</h1>
-        <button onClick={() => { resetForm(); setEditando(null); setShowForm(!showForm) }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors">
-          {showForm ? 'Cancelar' : '+ Nova Pessoa'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { resetForm(); setEditando(null); setShowForm(!showForm) }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors">
+            {showForm ? 'Cancelar' : '+ Nova Pessoa'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -293,6 +300,7 @@ export default function PessoasPage() {
           })}
         </div>
       )}
+      <PaginationControls meta={meta} onPageChange={setPage} />
     </div>
   )
 }

@@ -2,17 +2,28 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../models/prisma';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const usuariosRouter = Router();
 
 usuariosRouter.use(authMiddleware, adminMiddleware);
 
 // Listar todos
-usuariosRouter.get('/', async (_req, res: Response) => {
-  const usuarios = await prisma.user.findMany({
-    select: { id: true, nome: true, usuario: true, role: true, criadoEm: true },
-    orderBy: { nome: 'asc' },
-  });
+usuariosRouter.get('/', async (req, res: Response) => {
+  const pagination = parsePagination(req.query);
+  const sort = parseSort(req.query, ['nome', 'usuario', 'role', 'criadoEm'] as const, 'nome');
+
+  const [total, usuarios] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.findMany({
+      select: { id: true, nome: true, usuario: true, role: true, criadoEm: true },
+      orderBy: { [sort.sortBy]: sort.sortOrder },
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+
+  applyListHeaders(res, { ...pagination, ...sort, total });
   res.json(usuarios);
 });
 

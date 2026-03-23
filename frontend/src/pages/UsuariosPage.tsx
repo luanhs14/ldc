@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import api from '../services/api'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
+import PaginationControls from '../components/PaginationControls'
+import { getListMeta, type ListMeta } from '../services/pagination'
 
 interface Usuario {
   id: string
@@ -22,11 +24,33 @@ export default function UsuariosPage() {
   const [erro, setErro] = useState('')
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [page, setPage] = useState(1)
+  const [sortBy, setSortBy] = useState('nome')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [meta, setMeta] = useState<ListMeta>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'nome', sortOrder: 'asc' })
+
+  const toggleSort = (col: string) => {
+    setPage(1)
+    if (sortBy === col) {
+      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(col)
+      setSortOrder('asc')
+    }
+  }
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortBy !== col) return <span className="ml-1 text-gray-300">↕</span>
+    return <span className="ml-1 text-blue-500">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+  }
 
   const carregar = () =>
-    api.get('/usuarios').then((r) => setUsuarios(r.data))
+    api.get('/usuarios', { params: { page, pageSize: 10, sortBy, sortOrder } }).then((r) => {
+      setUsuarios(r.data)
+      setMeta(getListMeta(r.headers))
+    })
 
-  useEffect(() => { carregar() }, [])
+  useEffect(() => { carregar() }, [page, sortBy, sortOrder])
 
   const abrir = (u?: Usuario) => {
     setErro('')
@@ -74,21 +98,29 @@ export default function UsuariosPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-gray-900">Usuários</h1>
-        <button
-          onClick={() => abrir()}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
-        >
-          Novo usuário
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => abrir()}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            Novo usuário
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Nome</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Usuário</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Perfil</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900" onClick={() => toggleSort('nome')}>
+                Nome<SortIcon col="nome" />
+              </th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900" onClick={() => toggleSort('usuario')}>
+                Usuário<SortIcon col="usuario" />
+              </th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900" onClick={() => toggleSort('role')}>
+                Perfil<SortIcon col="role" />
+              </th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -125,6 +157,7 @@ export default function UsuariosPage() {
           </tbody>
         </table>
       </div>
+      <PaginationControls meta={meta} onPageChange={setPage} />
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const incidentesRouter = Router();
 incidentesRouter.use(authMiddleware);
@@ -8,16 +9,25 @@ incidentesRouter.use(authMiddleware);
 incidentesRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, status, gravidade } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['data', 'gravidade', 'status', 'criadoEm'] as const, 'data', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (status) where.status = String(status);
     if (gravidade) where.gravidade = String(gravidade);
 
-    const incidentes = await prisma.incidente.findMany({
-      where,
-      include: { visita: { select: { id: true, tipo: true } } },
-      orderBy: { data: 'desc' },
-    });
+    const [total, incidentes] = await Promise.all([
+      prisma.incidente.count({ where }),
+      prisma.incidente.findMany({
+        where,
+        include: { visita: { select: { id: true, tipo: true } } },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(incidentes);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar incidentes' });

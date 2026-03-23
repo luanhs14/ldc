@@ -5,6 +5,19 @@ import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ldc-bra-system-secret';
+const COOKIE_NAME = 'ldc_auth';
+
+function getCookieOptions() {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: isProduction,
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/',
+  };
+}
 
 export const authRouter = Router();
 
@@ -28,14 +41,24 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
 
+    res.cookie(COOKIE_NAME, token, getCookieOptions());
     res.json({
-      token,
       user: { id: user.id, nome: user.nome, usuario: user.usuario, role: user.role },
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro interno' });
   }
+});
+
+authRouter.post('/logout', (_req: Request, res: Response) => {
+  res.clearCookie(COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
+  res.status(204).send();
 });
 
 authRouter.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {

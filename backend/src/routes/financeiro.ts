@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const financeiroRouter = Router();
 financeiroRouter.use(authMiddleware);
@@ -8,15 +9,24 @@ financeiroRouter.use(authMiddleware);
 financeiroRouter.get('/orcamentos', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, ano } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['ano', 'criadoEm'] as const, 'ano', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (ano) where.ano = Number(ano);
 
-    const orcamentos = await prisma.orcamentoAnual.findMany({
-      where,
-      include: { _count: { select: { lancamentos: true } } },
-      orderBy: [{ ano: 'desc' }],
-    });
+    const [total, orcamentos] = await Promise.all([
+      prisma.orcamentoAnual.count({ where }),
+      prisma.orcamentoAnual.findMany({
+        where,
+        include: { _count: { select: { lancamentos: true } } },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(orcamentos);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar orçamentos' });
@@ -42,23 +52,31 @@ financeiroRouter.post('/orcamentos', async (req: AuthRequest, res: Response) => 
 financeiroRouter.get('/lancamentos', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, ano, categoria, orcamentoAnualId } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['data', 'valor', 'categoria', 'criadoEm'] as const, 'data', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (orcamentoAnualId) where.orcamentoAnualId = String(orcamentoAnualId);
     if (categoria) where.categoria = String(categoria);
     if (ano) where.data = { gte: new Date(`${ano}-01-01`), lte: new Date(`${ano}-12-31`) };
 
-    const lancamentos = await prisma.lancamentoCusto.findMany({
-      where,
-      include: {
-        elemento: { include: { elementoTipo: true } },
-        pendencia: { select: { id: true, descricao: true } },
-      },
-      orderBy: { data: 'desc' },
-    });
+    const [totalCount, totalAggregate, lancamentos] = await Promise.all([
+      prisma.lancamentoCusto.count({ where }),
+      prisma.lancamentoCusto.aggregate({ where, _sum: { valor: true } }),
+      prisma.lancamentoCusto.findMany({
+        where,
+        include: {
+          elemento: { include: { elementoTipo: true } },
+          pendencia: { select: { id: true, descricao: true } },
+        },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
-    const total = lancamentos.reduce((sum, l) => sum + l.valor, 0);
-    res.json({ lancamentos, total });
+    applyListHeaders(res, { ...pagination, ...sort, total: totalCount });
+    res.json({ lancamentos, total: totalAggregate._sum.valor || 0 });
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar lançamentos' });
   }

@@ -19,7 +19,13 @@ import { usuariosRouter } from './routes/usuarios';
 
 const app = express();
 
-app.use(cors());
+const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+
+app.use(cors({
+  origin: frontendOrigin,
+  credentials: true,
+  exposedHeaders: ['X-Page', 'X-Page-Size', 'X-Total-Count', 'X-Total-Pages', 'X-Sort-By', 'X-Sort-Order'],
+}));
 app.use(express.json());
 
 app.use('/api/auth', authRouter);

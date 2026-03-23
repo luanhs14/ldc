@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const visitasRouter = Router();
 visitasRouter.use(authMiddleware);
@@ -8,19 +9,28 @@ visitasRouter.use(authMiddleware);
 visitasRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, tipo } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['data', 'tipo', 'criadoEm'] as const, 'data', 'desc');
     const where: any = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (tipo) where.tipo = String(tipo);
 
-    const visitas = await prisma.visita.findMany({
-      where,
-      include: {
-        congregacao: true,
-        visitante: { select: { id: true, nome: true } },
-        _count: { select: { pendencias: true } },
-      },
-      orderBy: { data: 'desc' },
-    });
+    const [total, visitas] = await Promise.all([
+      prisma.visita.count({ where }),
+      prisma.visita.findMany({
+        where,
+        include: {
+          congregacao: true,
+          visitante: { select: { id: true, nome: true } },
+          _count: { select: { pendencias: true } },
+        },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(visitas);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar visitas' });

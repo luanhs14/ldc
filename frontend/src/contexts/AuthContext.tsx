@@ -1,72 +1,43 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import api from '../services/api';
-
-interface User {
-  id: string;
-  nome: string;
-  usuario: string;
-  role: string;
-}
-
-interface AuthContextType {
-  user: User | null;
-  token: string | null;
-  login: (usuario: string, senha: string) => Promise<void>;
-  logout: () => void;
-  isAuthenticated: boolean;
-}
-
-const AuthContext = createContext<AuthContextType>({} as AuthContextType);
-
-function parseUserFromStorage(): User | null {
-  try {
-    const stored = localStorage.getItem('user');
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
+import { subscribeToUnauthorized } from '../services/authSession';
+import { AuthContext, type User } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<User | null>(parseUserFromStorage);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const setUser = (u: User | null) => {
-    setUserState(u);
-    if (u) localStorage.setItem('user', JSON.stringify(u));
-    else localStorage.removeItem('user');
-  };
+  const logout = useCallback(() => {
+    setUser(null);
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
-    if (token) {
-      api.get('/auth/me').then((res) => {
+    api.get('/auth/me').then((res) => {
         setUser(res.data);
       }).catch(() => {
         logout();
+      }).finally(() => {
+        setIsLoading(false);
       });
-    }
-  }, [token]);
+  }, [logout]);
+
+  useEffect(() => subscribeToUnauthorized(logout), [logout]);
 
   const login = async (usuario: string, senha: string) => {
     const res = await api.post('/auth/login', { usuario, senha });
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
     setUser(res.data.user);
+    setIsLoading(false);
   };
 
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('token');
-  };
+  const handleLogout = useCallback(() => {
+    void api.post('/auth/logout').catch(() => undefined);
+    logout();
+  }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ user, login, logout: handleLogout, isAuthenticated: !!user, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  return useContext(AuthContext);
 }

@@ -2,25 +2,34 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../services/api'
 import type { Salao } from '../types'
+import PaginationControls from '../components/PaginationControls'
+import { getListMeta, type ListMeta } from '../services/pagination'
 
 export default function SalaoList() {
   const [saloes, setSaloes] = useState<Salao[]>([])
   const [loading, setLoading] = useState(true)
-  const [busca, setBusca] = useState('')
+  const [page, setPage] = useState(1)
+  const [sortBy, setSortBy] = useState('congregacao')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [meta, setMeta] = useState<ListMeta>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'congregacao', sortOrder: 'asc' })
 
-  const fetchSaloes = (b?: string) => {
-    const params: any = {}
-    const q = b !== undefined ? b : busca
-    if (q) params.busca = q
-    api.get('/saloes', { params }).then((res) => {
+  const sortKey = `${sortBy}:${sortOrder}`
+  const handleSortChange = (val: string) => {
+    const [by, order] = val.split(':')
+    setPage(1)
+    setSortBy(by)
+    setSortOrder(order as 'asc' | 'desc')
+  }
+
+  const fetchSaloes = () => {
+    api.get('/saloes', { params: { page, pageSize: 10, sortBy, sortOrder } }).then((res) => {
       setSaloes(res.data)
+      setMeta(getListMeta(res.headers))
       setLoading(false)
     }).catch(() => setLoading(false))
   }
 
-  useEffect(() => { fetchSaloes() }, [])
-
-  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); fetchSaloes() }
+  useEffect(() => { fetchSaloes() }, [page, sortBy, sortOrder])
 
   return (
     <div className="space-y-5">
@@ -31,19 +40,19 @@ export default function SalaoList() {
         </Link>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3">
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            type="text"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por congregação ou código BRA..."
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button type="submit" className="bg-gray-100 text-gray-700 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-200 font-medium">
-            Buscar
-          </button>
-        </form>
+      <div className="flex justify-end">
+        <select
+          value={sortKey}
+          onChange={(e) => handleSortChange(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="congregacao:asc">Congregação A→Z</option>
+          <option value="congregacao:desc">Congregação Z→A</option>
+          <option value="codigoBRA:asc">Código BRA A→Z</option>
+          <option value="codigoBRA:desc">Código BRA Z→A</option>
+          <option value="atualizadoEm:desc">Atualização (recente)</option>
+          <option value="atualizadoEm:asc">Atualização (antigo)</option>
+        </select>
       </div>
 
       {loading ? (
@@ -92,6 +101,7 @@ export default function SalaoList() {
               </Link>
             )
           })}
+          <PaginationControls meta={meta} onPageChange={setPage} />
         </div>
       )}
     </div>

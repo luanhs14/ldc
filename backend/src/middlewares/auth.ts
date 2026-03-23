@@ -2,25 +2,38 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ldc-bra-system-secret';
+const COOKIE_NAME = 'ldc_auth';
 
 export interface AuthRequest extends Request {
   userId?: string;
   userRole?: string;
 }
 
+function getCookieValue(cookieHeader: string | undefined, name: string) {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookies = cookieHeader.split(';');
+  for (const cookie of cookies) {
+    const [key, ...valueParts] = cookie.trim().split('=');
+    if (key === name) {
+      return decodeURIComponent(valueParts.join('='));
+    }
+  }
+
+  return null;
+}
+
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const cookieToken = getCookieValue(req.headers.cookie, COOKIE_NAME);
+  const token = cookieToken || bearerToken;
 
-  if (!authHeader) {
+  if (!token) {
     return res.status(401).json({ error: 'Token não fornecido' });
   }
-
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return res.status(401).json({ error: 'Token mal formatado' });
-  }
-
-  const token = parts[1];
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string; role: string };

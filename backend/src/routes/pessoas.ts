@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const pessoasRouter = Router();
 pessoasRouter.use(authMiddleware);
@@ -8,15 +9,24 @@ pessoasRouter.use(authMiddleware);
 pessoasRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { busca, funcao } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['nome', 'criadoEm'] as const, 'nome');
     const where: any = {};
     if (busca) where.nome = { contains: String(busca) };
     if (funcao) where.funcoes = { some: { funcao: String(funcao) } };
 
-    const pessoas = await prisma.pessoa.findMany({
-      where,
-      include: { funcoes: true, congregacao: true, saloes: { include: { salao: true } } },
-      orderBy: { nome: 'asc' },
-    });
+    const [total, pessoas] = await Promise.all([
+      prisma.pessoa.count({ where }),
+      prisma.pessoa.findMany({
+        where,
+        include: { funcoes: true, congregacao: true, saloes: { include: { salao: true } } },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(pessoas);
   } catch (e) {
     res.status(500).json({ error: 'Erro ao listar pessoas' });
@@ -71,13 +81,17 @@ pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     if (especialidades !== undefined) data.especialidades = especialidades?.length ? especialidades.join(',') : null;
 
     if (funcoes !== undefined) {
-      await prisma.pessoaFuncao.deleteMany({ where: { pessoaId: req.params.id } });
-      data.funcoes = { create: funcoes.map((f: string) => ({ funcao: f })) };
+      data.funcoes = {
+        deleteMany: {},
+        ...(funcoes.length ? { create: funcoes.map((f: string) => ({ funcao: f })) } : {}),
+      };
     }
 
     if (salaoIds !== undefined) {
-      await prisma.salaoResponsavel.deleteMany({ where: { pessoaId: req.params.id } });
-      data.saloes = salaoIds.length ? { create: salaoIds.map((id: string) => ({ salaoId: id })) } : undefined;
+      data.saloes = {
+        deleteMany: {},
+        ...(salaoIds.length ? { create: salaoIds.map((id: string) => ({ salaoId: id })) } : {}),
+      };
     }
 
     const pessoa = await prisma.pessoa.update({ where: { id: req.params.id }, data, include: { funcoes: true, saloes: { include: { salao: true } } } });

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 
 export const saloesRouter = Router();
 saloesRouter.use(authMiddleware);
@@ -9,6 +10,8 @@ saloesRouter.use(authMiddleware);
 saloesRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { busca } = req.query;
+    const pagination = parsePagination(req.query);
+    const sort = parseSort(req.query, ['congregacao', 'codigoBRA', 'bairro', 'criadoEm', 'atualizadoEm'] as const, 'congregacao');
     const where: any = {};
     if (busca) {
       where.OR = [
@@ -16,14 +19,21 @@ saloesRouter.get('/', async (req: AuthRequest, res: Response) => {
         { codigoBRA: { contains: String(busca) } },
       ];
     }
-    const saloes = await prisma.salao.findMany({
-      where,
-      include: {
-        congregacoes: true,
-        _count: { select: { pendencias: true, elementos: true, visitas: true } },
-      },
-      orderBy: { congregacao: 'asc' },
-    });
+    const [total, saloes] = await Promise.all([
+      prisma.salao.count({ where }),
+      prisma.salao.findMany({
+        where,
+        include: {
+          congregacoes: true,
+          _count: { select: { pendencias: true, elementos: true, visitas: true } },
+        },
+        orderBy: { [sort.sortBy]: sort.sortOrder },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyListHeaders(res, { ...pagination, ...sort, total });
     res.json(saloes);
   } catch (e) {
     console.error(e);

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
+import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 
 export default function Login() {
   const [usuario, setUsuario] = useState('')
@@ -17,8 +18,12 @@ export default function Login() {
     try {
       await login(usuario, senha)
       navigate('/')
-    } catch {
-      setErro('Usuário ou senha inválidos')
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setErro('Usuário ou senha inválidos')
+      } else {
+        setErro('Não foi possível entrar agora. Verifique se o servidor está ativo e tente novamente.')
+      }
     } finally {
       setLoading(false)
     }
