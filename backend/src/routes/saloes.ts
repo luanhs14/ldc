@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { gerarCronogramasParaSalao } from '../utils/cronograma';
 
 export const saloesRouter = Router();
 saloesRouter.use(authMiddleware);
@@ -12,7 +14,7 @@ saloesRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { busca } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['congregacao', 'codigoBRA', 'bairro', 'criadoEm', 'atualizadoEm'] as const, 'congregacao');
-    const where: any = {};
+    const where: Prisma.SalaoWhereInput = {};
     if (busca) {
       where.OR = [
         { congregacao: { contains: String(busca) } },
@@ -77,6 +79,12 @@ saloesRouter.post('/', async (req: AuthRequest, res: Response) => {
         observacoes,
       },
     });
+
+    // Gera entradas de cronograma para o ano corrente ao criar o salão
+    gerarCronogramasParaSalao(salao.id, new Date().getFullYear()).catch((e) =>
+      console.error('Erro ao gerar cronograma para novo salão:', e)
+    );
+
     res.status(201).json(salao);
   } catch (e: any) {
     if (e.code === 'P2002') return res.status(400).json({ error: 'Código BRA já existe' });
@@ -89,7 +97,7 @@ saloesRouter.post('/', async (req: AuthRequest, res: Response) => {
 saloesRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { congregacao, codigoBRA, endereco, dataConstrucao, dataUltimaReforma, observacoes } = req.body;
-    const data: any = {};
+    const data: Prisma.SalaoUpdateInput = {};
     if (congregacao !== undefined) data.congregacao = congregacao;
     if (codigoBRA !== undefined) data.codigoBRA = codigoBRA;
     if (endereco !== undefined) data.endereco = endereco;

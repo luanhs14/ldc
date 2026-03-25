@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
@@ -11,7 +12,7 @@ pendenciasRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { salaoId, status, prioridade, elementoId } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['criadoEm', 'dataLimite', 'prioridade', 'status', 'concluidoEm'] as const, 'criadoEm', 'desc');
-    const where: any = {};
+    const where: Prisma.PendenciaWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (status) where.status = String(status);
     if (prioridade) where.prioridade = String(prioridade);
@@ -67,7 +68,7 @@ pendenciasRouter.post('/', async (req: AuthRequest, res: Response) => {
 pendenciasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { descricao, prioridade, risco, responsavel, dataLimite, status, elementoId, equipamentoId } = req.body;
-    const data: any = {};
+    const data: Prisma.PendenciaUncheckedUpdateInput = {};
     if (descricao !== undefined) data.descricao = descricao;
     if (prioridade !== undefined) data.prioridade = prioridade;
     if (risco !== undefined) data.risco = risco || null;

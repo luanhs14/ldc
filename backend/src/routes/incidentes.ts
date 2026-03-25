@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
@@ -11,7 +12,7 @@ incidentesRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { salaoId, status, gravidade } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['data', 'gravidade', 'status', 'criadoEm'] as const, 'data', 'desc');
-    const where: any = {};
+    const where: Prisma.IncidenteWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (status) where.status = String(status);
     if (gravidade) where.gravidade = String(gravidade);
@@ -56,7 +57,7 @@ incidentesRouter.post('/', async (req: AuthRequest, res: Response) => {
 incidentesRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { local, tipo, descricao, gravidade, acaoCorretiva, status } = req.body;
-    const data: any = {};
+    const data: Prisma.IncidenteUpdateInput = {};
     if (local !== undefined) data.local = local;
     if (tipo !== undefined) data.tipo = tipo;
     if (descricao !== undefined) data.descricao = descricao;

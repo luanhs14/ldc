@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'ldc-bra-system-secret';
+import { JWT_SECRET } from '../config';
 const COOKIE_NAME = 'ldc_auth';
 
 export interface AuthRequest extends Request {

@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 
@@ -70,7 +71,7 @@ elementosRouter.post('/', async (req: AuthRequest, res: Response) => {
 elementosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { nomeCustomizado, dataInstalacao, condicaoAtual, vidaUtilAnos, proximaManutencao, observacoes } = req.body;
-    const data: any = {};
+    const data: Prisma.ElementoUpdateInput = {};
     if (nomeCustomizado !== undefined) data.nomeCustomizado = nomeCustomizado;
     if (dataInstalacao !== undefined) data.dataInstalacao = dataInstalacao ? new Date(dataInstalacao) : null;
     if (condicaoAtual !== undefined) data.condicaoAtual = condicaoAtual;

@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 
@@ -17,7 +18,7 @@ servicosRouter.get('/epis', async (_req: AuthRequest, res: Response) => {
 servicosRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, status } = req.query;
-    const where: any = {};
+    const where: Prisma.ServicoAltoRiscoWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (status) where.status = String(status);
 
@@ -70,7 +71,7 @@ servicosRouter.post('/', async (req: AuthRequest, res: Response) => {
 servicosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { tipo, descricao, autorizadoPor, treinamentosNecessarios, data, status, epiIds } = req.body;
-    const update: any = {};
+    const update: Prisma.ServicoAltoRiscoUpdateInput = {};
     if (tipo !== undefined) update.tipo = tipo;
     if (descricao !== undefined) update.descricao = descricao;
     if (autorizadoPor !== undefined) update.autorizadoPor = autorizadoPor;

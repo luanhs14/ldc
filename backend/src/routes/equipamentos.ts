@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 
@@ -8,7 +9,7 @@ equipamentosRouter.use(authMiddleware);
 equipamentosRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { elementoId, salaoId } = req.query;
-    const where: any = {};
+    const where: Prisma.EquipamentoWhereInput = {};
     if (elementoId) where.elementoId = String(elementoId);
     if (salaoId) where.elemento = { salaoId: String(salaoId) };
 
@@ -46,7 +47,7 @@ equipamentosRouter.post('/', async (req: AuthRequest, res: Response) => {
 equipamentosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { nome, modelo, fabricante, dataInstalacao, garantiaAte, proximaManutencao, observacoes } = req.body;
-    const data: any = {};
+    const data: Prisma.EquipamentoUpdateInput = {};
     if (nome !== undefined) data.nome = nome;
     if (modelo !== undefined) data.modelo = modelo;
     if (fabricante !== undefined) data.fabricante = fabricante;

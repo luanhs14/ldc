@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 
@@ -8,7 +9,7 @@ congregacoesRouter.use(authMiddleware);
 congregacoesRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId } = req.query;
-    const where: any = salaoId ? { salaoId: String(salaoId) } : {};
+    const where: Prisma.CongregacaoWhereInput = salaoId ? { salaoId: String(salaoId) } : {};
     const congregacoes = await prisma.congregacao.findMany({ where, orderBy: { nome: 'asc' } });
     res.json(congregacoes);
   } catch (e) {

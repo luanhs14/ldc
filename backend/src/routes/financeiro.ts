@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
@@ -11,7 +12,7 @@ financeiroRouter.get('/orcamentos', async (req: AuthRequest, res: Response) => {
     const { salaoId, ano } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['ano', 'criadoEm'] as const, 'ano', 'desc');
-    const where: any = {};
+    const where: Prisma.OrcamentoAnualWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (ano) where.ano = Number(ano);
 
@@ -54,7 +55,7 @@ financeiroRouter.get('/lancamentos', async (req: AuthRequest, res: Response) => 
     const { salaoId, ano, categoria, orcamentoAnualId } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['data', 'valor', 'categoria', 'criadoEm'] as const, 'data', 'desc');
-    const where: any = {};
+    const where: Prisma.LancamentoCustoWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (orcamentoAnualId) where.orcamentoAnualId = String(orcamentoAnualId);
     if (categoria) where.categoria = String(categoria);

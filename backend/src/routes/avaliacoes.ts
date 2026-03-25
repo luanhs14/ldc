@@ -1,7 +1,16 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+
+type ElementoAvaliacaoInput = {
+  elementoId: string;
+  condicao: string;
+  previsaoSubstituicao?: string | null;
+  planejamentoReforma?: string | null;
+  observacoes?: string | null;
+};
 
 export const avaliacoesRouter = Router();
 avaliacoesRouter.use(authMiddleware);
@@ -11,7 +20,7 @@ avaliacoesRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { salaoId, tipo } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['data', 'tipo', 'criadoEm', 'avaliador'] as const, 'data', 'desc');
-    const where: any = {};
+    const where: Prisma.AvaliacaoWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (tipo) where.tipo = String(tipo);
 
@@ -61,7 +70,7 @@ avaliacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
         data: {
           salaoId, tipo, data: new Date(data), avaliador, observacoes,
           elementos: elementos?.length ? {
-            create: elementos.map((e: any) => ({
+            create: elementos.map((e: ElementoAvaliacaoInput) => ({
               elementoId: e.elementoId,
               condicao: e.condicao,
               previsaoSubstituicao: e.previsaoSubstituicao ? new Date(e.previsaoSubstituicao) : null,
@@ -75,7 +84,7 @@ avaliacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
 
       if (elementos?.length) {
         await Promise.all(
-          elementos.map((e: any) =>
+          elementos.map((e: ElementoAvaliacaoInput) =>
             tx.elemento.update({
               where: { id: e.elementoId },
               data: { condicaoAtual: e.condicao },

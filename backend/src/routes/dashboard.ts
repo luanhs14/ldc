@@ -68,20 +68,6 @@ dashboardRouter.get('/', async (_req: AuthRequest, res: Response) => {
       where: { mesInicio: { lte: mesAtual }, mesFim: { gte: mesAtual } },
     });
 
-    // Cronograma: gerar automaticamente se necessário (on-demand)
-    if (periodosAtivos.length > 0) {
-      const saloes = await prisma.salao.findMany({ select: { id: true } });
-      for (const salao of saloes) {
-        for (const periodo of periodosAtivos) {
-          await prisma.cronogramaAnual.upsert({
-            where: { salaoId_periodoId_ano: { salaoId: salao.id, periodoId: periodo.id, ano: anoAtual } },
-            update: {},
-            create: { salaoId: salao.id, periodoId: periodo.id, ano: anoAtual, status: 'AGUARDANDO' },
-          });
-        }
-      }
-    }
-
     res.json({
       totalSaloes,
       totalPendencias,

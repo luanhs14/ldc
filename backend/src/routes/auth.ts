@@ -3,8 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'ldc-bra-system-secret';
+import { JWT_SECRET } from '../config';
 const COOKIE_NAME = 'ldc_auth';
 
 function getCookieOptions() {

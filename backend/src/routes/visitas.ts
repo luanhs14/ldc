@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
@@ -11,7 +12,7 @@ visitasRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { salaoId, tipo } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['data', 'tipo', 'criadoEm'] as const, 'data', 'desc');
-    const where: any = {};
+    const where: Prisma.VisitaWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (tipo) where.tipo = String(tipo);
 
@@ -80,7 +81,7 @@ visitasRouter.post('/', async (req: AuthRequest, res: Response) => {
 visitasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { tipo, data, visitanteId, visitanteNome, congregacaoId, relatorio } = req.body;
-    const update: any = {};
+    const update: Prisma.VisitaUncheckedUpdateInput = {};
     if (tipo !== undefined) update.tipo = tipo;
     if (data !== undefined) update.data = new Date(data);
     if (visitanteId !== undefined) update.visitanteId = visitanteId || null;

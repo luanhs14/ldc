@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
@@ -11,7 +12,7 @@ pessoasRouter.get('/', async (req: AuthRequest, res: Response) => {
     const { busca, funcao } = req.query;
     const pagination = parsePagination(req.query);
     const sort = parseSort(req.query, ['nome', 'criadoEm'] as const, 'nome');
-    const where: any = {};
+    const where: Prisma.PessoaWhereInput = {};
     if (busca) where.nome = { contains: String(busca) };
     if (funcao) where.funcoes = { some: { funcao: String(funcao) } };
 
@@ -71,7 +72,7 @@ pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
 pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes, salaoIds, especialidades } = req.body;
-    const data: any = {};
+    const data: Prisma.PessoaUncheckedUpdateInput = {};
     if (nome !== undefined) data.nome = nome;
     if (telefone !== undefined) data.telefone = telefone;
     if (email !== undefined) data.email = email;

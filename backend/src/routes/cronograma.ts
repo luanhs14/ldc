@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { gerarCronogramasParaSalao } from '../utils/cronograma';
 
 export const cronogramaRouter = Router();
 cronogramaRouter.use(authMiddleware);
@@ -17,7 +19,7 @@ cronogramaRouter.get('/periodos', async (_req: AuthRequest, res: Response) => {
 cronogramaRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, ano } = req.query;
-    const where: any = {};
+    const where: Prisma.CronogramaAnualWhereInput = {};
     if (salaoId) where.salaoId = String(salaoId);
     if (ano) where.ano = Number(ano);
 
@@ -33,29 +35,14 @@ cronogramaRouter.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 // Gera cronogramas para o ano atual (idempotente)
-cronogramaRouter.post('/gerar', async (req: AuthRequest, res: Response) => {
+cronogramaRouter.post('/gerar', async (_req: AuthRequest, res: Response) => {
   try {
     const ano = new Date().getFullYear();
-    const [saloes, periodos] = await Promise.all([
-      prisma.salao.findMany({ select: { id: true } }),
-      prisma.periodoManutencao.findMany(),
-    ]);
-
-    let criados = 0;
+    const saloes = await prisma.salao.findMany({ select: { id: true } });
     for (const salao of saloes) {
-      for (const periodo of periodos) {
-        const existe = await prisma.cronogramaAnual.findUnique({
-          where: { salaoId_periodoId_ano: { salaoId: salao.id, periodoId: periodo.id, ano } },
-        });
-        if (!existe) {
-          await prisma.cronogramaAnual.create({
-            data: { salaoId: salao.id, periodoId: periodo.id, ano, status: 'AGUARDANDO' },
-          });
-          criados++;
-        }
-      }
+      await gerarCronogramasParaSalao(salao.id, ano);
     }
-    res.json({ criados, ano });
+    res.json({ ano });
   } catch (e) {
     res.status(500).json({ error: 'Erro ao gerar cronograma' });
   }
