@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { validate } from '../middlewares/validate';
+import { createPendenciaSchema, updatePendenciaSchema } from '../schemas/pendencia.schema';
 
 export const pendenciasRouter = Router();
 pendenciasRouter.use(authMiddleware);
@@ -43,10 +45,9 @@ pendenciasRouter.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-pendenciasRouter.post('/', async (req: AuthRequest, res: Response) => {
+pendenciasRouter.post('/', validate(createPendenciaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, avaliacaoId, visitaId, elementoId, equipamentoId, descricao, prioridade, risco, responsavel, dataLimite } = req.body;
-    if (!salaoId || !descricao) return res.status(400).json({ error: 'salaoId e descrição são obrigatórios' });
 
     const pendencia = await prisma.pendencia.create({
       data: {
@@ -65,7 +66,7 @@ pendenciasRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-pendenciasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+pendenciasRouter.put('/:id', validate(updatePendenciaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { descricao, prioridade, risco, responsavel, dataLimite, status, elementoId, equipamentoId } = req.body;
     const data: Prisma.PendenciaUncheckedUpdateInput = {};

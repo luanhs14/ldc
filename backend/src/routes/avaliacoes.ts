@@ -3,14 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
-
-type ElementoAvaliacaoInput = {
-  elementoId: string;
-  condicao: string;
-  previsaoSubstituicao?: string | null;
-  planejamentoReforma?: string | null;
-  observacoes?: string | null;
-};
+import { validate } from '../middlewares/validate';
+import { createAvaliacaoSchema, ElementoAvaliacaoInput } from '../schemas/avaliacao.schema';
 
 export const avaliacoesRouter = Router();
 avaliacoesRouter.use(authMiddleware);
@@ -58,12 +52,9 @@ avaliacoesRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-avaliacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
+avaliacoesRouter.post('/', validate(createAvaliacaoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, tipo, data, avaliador, observacoes, elementos } = req.body;
-    if (!salaoId || !tipo || !data || !avaliador) {
-      return res.status(400).json({ error: 'salaoId, tipo, data e avaliador são obrigatórios' });
-    }
 
     const avaliacao = await prisma.$transaction(async (tx) => {
       const novaAvaliacao = await tx.avaliacao.create({

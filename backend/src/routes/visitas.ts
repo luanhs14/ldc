@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { validate } from '../middlewares/validate';
+import { createVisitaSchema, updateVisitaSchema } from '../schemas/visita.schema';
 
 export const visitasRouter = Router();
 visitasRouter.use(authMiddleware);
@@ -57,10 +59,9 @@ visitasRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-visitasRouter.post('/', async (req: AuthRequest, res: Response) => {
+visitasRouter.post('/', validate(createVisitaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, tipo, data, visitanteId, visitanteNome, congregacaoId, relatorio } = req.body;
-    if (!salaoId || !tipo || !data) return res.status(400).json({ error: 'salaoId, tipo e data são obrigatórios' });
 
     const visita = await prisma.visita.create({
       data: {
@@ -78,7 +79,7 @@ visitasRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-visitasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+visitasRouter.put('/:id', validate(updateVisitaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { tipo, data, visitanteId, visitanteNome, congregacaoId, relatorio } = req.body;
     const update: Prisma.VisitaUncheckedUpdateInput = {};

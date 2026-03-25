@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { createElementoSchema, updateElementoSchema } from '../schemas/elemento.schema';
 
 export const elementosRouter = Router();
 elementosRouter.use(authMiddleware);
@@ -46,10 +48,9 @@ elementosRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-elementosRouter.post('/', async (req: AuthRequest, res: Response) => {
+elementosRouter.post('/', validate(createElementoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, elementoTipoId, nomeCustomizado, dataInstalacao, condicaoAtual, vidaUtilAnos, proximaManutencao, observacoes } = req.body;
-    if (!salaoId || !elementoTipoId) return res.status(400).json({ error: 'salaoId e elementoTipoId são obrigatórios' });
 
     const elemento = await prisma.elemento.create({
       data: {
@@ -68,7 +69,7 @@ elementosRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-elementosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+elementosRouter.put('/:id', validate(updateElementoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { nomeCustomizado, dataInstalacao, condicaoAtual, vidaUtilAnos, proximaManutencao, observacoes } = req.body;
     const data: Prisma.ElementoUpdateInput = {};

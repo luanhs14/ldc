@@ -4,6 +4,8 @@ import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
 import { gerarCronogramasParaSalao } from '../utils/cronograma';
+import { validate } from '../middlewares/validate';
+import { createSalaoSchema, updateSalaoSchema } from '../schemas/salao.schema';
 
 export const saloesRouter = Router();
 saloesRouter.use(authMiddleware);
@@ -64,10 +66,9 @@ saloesRouter.get('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Criar salão
-saloesRouter.post('/', async (req: AuthRequest, res: Response) => {
+saloesRouter.post('/', validate(createSalaoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { congregacao, codigoBRA, endereco, dataConstrucao, dataUltimaReforma, observacoes } = req.body;
-    if (!congregacao || !codigoBRA) return res.status(400).json({ error: 'Congregação e código BRA são obrigatórios' });
 
     const salao = await prisma.salao.create({
       data: {
@@ -94,7 +95,7 @@ saloesRouter.post('/', async (req: AuthRequest, res: Response) => {
 });
 
 // Atualizar salão
-saloesRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+saloesRouter.put('/:id', validate(updateSalaoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { congregacao, codigoBRA, endereco, dataConstrucao, dataUltimaReforma, observacoes } = req.body;
     const data: Prisma.SalaoUpdateInput = {};

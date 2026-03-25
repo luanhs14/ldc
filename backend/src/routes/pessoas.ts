@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { validate } from '../middlewares/validate';
+import { createPessoaSchema, updatePessoaSchema } from '../schemas/pessoa.schema';
 
 export const pessoasRouter = Router();
 pessoasRouter.use(authMiddleware);
@@ -47,10 +49,9 @@ pessoasRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
+pessoasRouter.post('/', validate(createPessoaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes, salaoIds, especialidades } = req.body;
-    if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
 
     const pessoa = await prisma.pessoa.create({
       data: {
@@ -69,7 +70,7 @@ pessoasRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-pessoasRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+pessoasRouter.put('/:id', validate(updatePessoaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { nome, telefone, email, congregacaoId, autorizadoAltoRisco, observacoesAutorizacao, funcoes, salaoIds, especialidades } = req.body;
     const data: Prisma.PessoaUncheckedUpdateInput = {};

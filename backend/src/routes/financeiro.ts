@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { validate } from '../middlewares/validate';
+import { createOrcamentoSchema, createLancamentoSchema } from '../schemas/financeiro.schema';
 
 export const financeiroRouter = Router();
 financeiroRouter.use(authMiddleware);
@@ -34,12 +36,9 @@ financeiroRouter.get('/orcamentos', async (req: AuthRequest, res: Response) => {
   }
 });
 
-financeiroRouter.post('/orcamentos', async (req: AuthRequest, res: Response) => {
+financeiroRouter.post('/orcamentos', validate(createOrcamentoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, ano, orcamentoPrevisto, saldoReserva, observacoes } = req.body;
-    if (!salaoId || !ano || orcamentoPrevisto === undefined) {
-      return res.status(400).json({ error: 'salaoId, ano e orcamentoPrevisto são obrigatórios' });
-    }
     const orcamento = await prisma.orcamentoAnual.create({
       data: { salaoId, ano: Number(ano), orcamentoPrevisto: Number(orcamentoPrevisto), saldoReserva: Number(saldoReserva || 0), observacoes },
     });
@@ -83,12 +82,9 @@ financeiroRouter.get('/lancamentos', async (req: AuthRequest, res: Response) => 
   }
 });
 
-financeiroRouter.post('/lancamentos', async (req: AuthRequest, res: Response) => {
+financeiroRouter.post('/lancamentos', validate(createLancamentoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, orcamentoAnualId, pendenciaId, elementoId, descricao, valor, data, categoria } = req.body;
-    if (!salaoId || !descricao || valor === undefined || !data || !categoria) {
-      return res.status(400).json({ error: 'salaoId, descrição, valor, data e categoria são obrigatórios' });
-    }
     const lancamento = await prisma.lancamentoCusto.create({
       data: {
         salaoId, orcamentoAnualId: orcamentoAnualId || null,

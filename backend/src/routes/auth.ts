@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { JWT_SECRET } from '../config';
+import { validate } from '../middlewares/validate';
+import { loginSchema, alterarSenhaSchema } from '../schemas/auth.schema';
 const COOKIE_NAME = 'ldc_auth';
 
 function getCookieOptions() {
@@ -20,13 +22,9 @@ function getCookieOptions() {
 
 export const authRouter = Router();
 
-authRouter.post('/login', async (req: Request, res: Response) => {
+authRouter.post('/login', validate(loginSchema), async (req: Request, res: Response) => {
   try {
     const { usuario, senha } = req.body;
-
-    if (!usuario || !senha) {
-      return res.status(400).json({ error: 'Usuário e senha são obrigatórios' });
-    }
 
     const user = await prisma.user.findUnique({ where: { usuario } });
     if (!user) {
@@ -74,16 +72,9 @@ authRouter.get('/me', authMiddleware, async (req: AuthRequest, res: Response) =>
   }
 });
 
-authRouter.put('/senha', authMiddleware, async (req: AuthRequest, res: Response) => {
+authRouter.put('/senha', authMiddleware, validate(alterarSenhaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { senhaAtual, novaSenha } = req.body;
-
-    if (!senhaAtual || !novaSenha) {
-      return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias' });
-    }
-    if (novaSenha.length < 6) {
-      return res.status(400).json({ error: 'A nova senha deve ter ao menos 6 caracteres' });
-    }
 
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });

@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { applyListHeaders, parsePagination, parseSort } from '../utils/listing';
+import { validate } from '../middlewares/validate';
+import { createIncidenteSchema, updateIncidenteSchema } from '../schemas/incidente.schema';
 
 export const incidentesRouter = Router();
 incidentesRouter.use(authMiddleware);
@@ -35,12 +37,9 @@ incidentesRouter.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-incidentesRouter.post('/', async (req: AuthRequest, res: Response) => {
+incidentesRouter.post('/', validate(createIncidenteSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, visitaId, servicoId, data, local, tipo, descricao, gravidade, acaoCorretiva } = req.body;
-    if (!salaoId || !data || !local || !tipo || !descricao || !gravidade) {
-      return res.status(400).json({ error: 'salaoId, data, local, tipo, descrição e gravidade são obrigatórios' });
-    }
     const incidente = await prisma.incidente.create({
       data: {
         salaoId, visitaId: visitaId || null, servicoId: servicoId || null,
@@ -54,7 +53,7 @@ incidentesRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-incidentesRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+incidentesRouter.put('/:id', validate(updateIncidenteSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { local, tipo, descricao, gravidade, acaoCorretiva, status } = req.body;
     const data: Prisma.IncidenteUpdateInput = {};

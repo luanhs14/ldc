@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { createCongregacaoSchema, updateCongregacaoSchema } from '../schemas/congregacao.schema';
 
 export const congregacoesRouter = Router();
 congregacoesRouter.use(authMiddleware);
@@ -17,10 +19,9 @@ congregacoesRouter.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-congregacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
+congregacoesRouter.post('/', validate(createCongregacaoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { nome, salaoId } = req.body;
-    if (!nome || !salaoId) return res.status(400).json({ error: 'Nome e salaoId são obrigatórios' });
     const congregacao = await prisma.congregacao.create({ data: { nome, salaoId } });
     res.status(201).json(congregacao);
   } catch (e) {
@@ -28,7 +29,7 @@ congregacoesRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-congregacoesRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+congregacoesRouter.put('/:id', validate(updateCongregacaoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { nome } = req.body;
     const congregacao = await prisma.congregacao.update({ where: { id: req.params.id }, data: { nome } });

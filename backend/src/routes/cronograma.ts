@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
 import { gerarCronogramasParaSalao } from '../utils/cronograma';
+import { validate } from '../middlewares/validate';
+import { updateCronogramaSchema } from '../schemas/cronograma.schema';
 
 export const cronogramaRouter = Router();
 cronogramaRouter.use(authMiddleware);
@@ -48,7 +50,7 @@ cronogramaRouter.post('/gerar', async (_req: AuthRequest, res: Response) => {
   }
 });
 
-cronogramaRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+cronogramaRouter.put('/:id', validate(updateCronogramaSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { status, observacoes } = req.body;
     const cronograma = await prisma.cronogramaAnual.update({

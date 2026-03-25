@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../models/prisma';
 import { authMiddleware, AuthRequest } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { createServicoSchema, updateServicoSchema } from '../schemas/servico.schema';
 
 export const servicosRouter = Router();
 servicosRouter.use(authMiddleware);
@@ -37,12 +39,9 @@ servicosRouter.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-servicosRouter.post('/', async (req: AuthRequest, res: Response) => {
+servicosRouter.post('/', validate(createServicoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { salaoId, visitaId, pendenciaId, tipo, descricao, autorizadoPor, treinamentosNecessarios, data, status, epiIds, analiseRisco } = req.body;
-    if (!salaoId || !tipo || !descricao || !data) {
-      return res.status(400).json({ error: 'salaoId, tipo, descricao e data são obrigatórios' });
-    }
 
     const servico = await prisma.servicoAltoRisco.create({
       data: {
@@ -68,7 +67,7 @@ servicosRouter.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-servicosRouter.put('/:id', async (req: AuthRequest, res: Response) => {
+servicosRouter.put('/:id', validate(updateServicoSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { tipo, descricao, autorizadoPor, treinamentosNecessarios, data, status, epiIds } = req.body;
     const update: Prisma.ServicoAltoRiscoUpdateInput = {};
