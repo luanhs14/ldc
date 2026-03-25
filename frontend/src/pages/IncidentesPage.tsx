@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Incidente } from '../types'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 const TIPOS = ['LESAO', 'QUASE_ACIDENTE', 'SITUACAO_PERIGOSA']
 const TIPO_LABELS: Record<string, string> = {
@@ -11,60 +14,59 @@ const GRAVIDADE_COLORS: Record<string, string> = {
   BAIXA: 'bg-green-100 text-green-700', MEDIA: 'bg-amber-100 text-amber-700', ALTA: 'bg-red-100 text-red-700',
 }
 
+const FORM_INICIAL = {
+  data: new Date().toISOString().split('T')[0],
+  local: '', tipo: 'SITUACAO_PERIGOSA', descricao: '', gravidade: 'MEDIA', acaoCorretiva: '',
+}
+
 export default function IncidentesPage() {
   const { id: salaoId } = useParams()
   const navigate = useNavigate()
-  const [incidentes, setIncidentes] = useState<Incidente[]>([])
-  const [salaoNome, setSalaoNome] = useState('')
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [erro, setErro] = useState('')
+  const [form, setForm] = useState(FORM_INICIAL)
 
-  const [form, setForm] = useState({
-    data: new Date().toISOString().split('T')[0],
-    local: '', tipo: 'SITUACAO_PERIGOSA', descricao: '', gravidade: 'MEDIA', acaoCorretiva: '',
+  const { data: incidentes = [], isLoading: loadingInc } = useQuery({
+    queryKey: ['incidentes', { salaoId }],
+    queryFn: () => api.get('/incidentes', { params: { salaoId } }).then((r) => r.data as Incidente[]),
+    enabled: !!salaoId,
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [incRes, sRes] = await Promise.all([
-        api.get('/incidentes', { params: { salaoId } }),
-        api.get(`/saloes/${salaoId}`),
-      ])
-      setIncidentes(incRes.data)
-      setSalaoNome(sRes.data.congregacao)
-    } catch { setErro('Erro ao carregar dados') }
-    finally { setLoading(false) }
-  }
+  const { data: salao } = useQuery({
+    queryKey: ['salao', salaoId],
+    queryFn: () => api.get(`/saloes/${salaoId}`).then((r) => r.data),
+    enabled: !!salaoId,
+  })
 
-  useEffect(() => { fetchTudo() }, [salaoId])
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['incidentes', { salaoId }] })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      await api.post('/incidentes', { salaoId, ...form, acaoCorretiva: form.acaoCorretiva || null })
-      setForm({ data: new Date().toISOString().split('T')[0], local: '', tipo: 'SITUACAO_PERIGOSA', descricao: '', gravidade: 'MEDIA', acaoCorretiva: '' })
-      setShowForm(false)
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao registrar incidente')
-    }
-  }
+  const criarMutation = useMutation({
+    mutationFn: (data: typeof form) => api.post('/incidentes', { salaoId, ...data, acaoCorretiva: data.acaoCorretiva || null }),
+    onSuccess: () => { setForm(FORM_INICIAL); setShowForm(false); invalidate(); toast.success('Incidente registrado') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao registrar incidente')),
+  })
 
-  const handleResolverIncidente = async (inc: Incidente) => {
-    try {
-      await api.put(`/incidentes/${inc.id}`, { status: inc.status === 'RESOLVIDO' ? 'ABERTO' : 'RESOLVIDO' })
-      fetchTudo()
-    } catch { setErro('Erro ao atualizar incidente') }
-  }
+  const resolverMutation = useMutation({
+    mutationFn: (inc: Incidente) => api.put(`/incidentes/${inc.id}`, {
+      status: inc.status === 'RESOLVIDO' ? 'ABERTO' : 'RESOLVIDO',
+    }),
+    onSuccess: invalidate,
+    onError: (err) => setErro(apiErro(err, 'Erro ao atualizar incidente')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/incidentes/${id}`),
+    onSuccess: () => { invalidate(); toast.success('Incidente excluído') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir incidente')),
+  })
 
   const handleExcluir = async (id: string) => {
-    if (!confirm('Excluir este incidente?')) return
-    try { await api.delete(`/incidentes/${id}`); fetchTudo() }
-    catch { setErro('Erro ao excluir incidente') }
+    if (!await confirmDialog('Excluir este incidente?')) return
+    excluirMutation.mutate(id)
   }
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (loadingInc) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
 
   const abertos = incidentes.filter((i) => i.status === 'ABERTO').length
 
@@ -79,7 +81,7 @@ export default function IncidentesPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm text-gray-400 mb-1">
-            <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salaoNome}</button>
+            <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salao?.congregacao}</button>
           </div>
           <h1 className="text-xl font-bold text-gray-900">Incidentes</h1>
         </div>
@@ -98,9 +100,9 @@ export default function IncidentesPage() {
         </div>
       )}
 
-      {/* Formulário */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); criarMutation.mutate(form) }}
+          className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-gray-700">Novo incidente / ocorrência</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -144,7 +146,8 @@ export default function IncidentesPage() {
             </div>
           </div>
           <div className="flex gap-3">
-            <button type="submit" className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 text-sm font-medium">
+            <button type="submit" disabled={criarMutation.isPending}
+              className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-50">
               Registrar
             </button>
             <button type="button" onClick={() => setShowForm(false)}
@@ -155,7 +158,6 @@ export default function IncidentesPage() {
         </form>
       )}
 
-      {/* Lista */}
       {incidentes.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center text-gray-400 text-sm">
           Nenhum incidente registrado.
@@ -188,7 +190,7 @@ export default function IncidentesPage() {
                   )}
                 </div>
                 <div className="flex flex-col gap-2 shrink-0">
-                  <button onClick={() => handleResolverIncidente(inc)}
+                  <button onClick={() => resolverMutation.mutate(inc)}
                     className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
                       inc.status === 'ABERTO'
                         ? 'border-green-200 text-green-600 hover:bg-green-50'

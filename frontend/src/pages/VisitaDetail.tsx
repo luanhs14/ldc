@@ -1,45 +1,46 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Visita, Pendencia } from '../types'
 import { VISITA_TIPO_LABELS, PRIORIDADE_COLORS } from '../types'
+import { confirmDialog } from '../components/ConfirmModal'
 
 export default function VisitaDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [visita, setVisita] = useState<Visita | null>(null)
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [toggling, setToggling] = useState<string | null>(null)
   const [erro, setErro] = useState('')
 
-  const fetchVisita = () => {
-    api.get(`/visitas/${id}`).then((res) => {
-      setVisita(res.data)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }
+  const { data: visita, isLoading } = useQuery({
+    queryKey: ['visita', id],
+    queryFn: () => api.get(`/visitas/${id}`).then((r) => r.data as Visita),
+    enabled: !!id,
+  })
 
-  useEffect(() => { fetchVisita() }, [id])
+  const toggleMutation = useMutation({
+    mutationFn: (p: Pendencia) => api.put(`/pendencias/${p.id}`, {
+      status: p.status === 'CONCLUIDO' ? 'PENDENTE' : 'CONCLUIDO',
+    }),
+    onMutate: (p) => setToggling(p.id),
+    onSettled: () => setToggling(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['visita', id] }),
+    onError: (err) => setErro(apiErro(err, 'Erro ao atualizar pendência')),
+  })
 
-  const handleTogglePendencia = async (p: Pendencia) => {
-    setToggling(p.id)
-    try {
-      const novoStatus = p.status === 'CONCLUIDO' ? 'PENDENTE' : 'CONCLUIDO'
-      await api.put(`/pendencias/${p.id}`, { status: novoStatus })
-      fetchVisita()
-    } catch { setErro('Erro ao atualizar pendência') }
-    finally { setToggling(null) }
-  }
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/visitas/${id}`),
+    onSuccess: () => navigate(`/saloes/${visita?.salaoId}`),
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir visita')),
+  })
 
   const handleExcluir = async () => {
-    if (!confirm('Excluir esta visita?')) return
-    try {
-      await api.delete(`/visitas/${id}`)
-      navigate(`/saloes/${visita?.salaoId}`)
-    } catch { setErro('Erro ao excluir visita') }
+    if (!await confirmDialog('Excluir esta visita?')) return
+    deleteMutation.mutate()
   }
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
   if (!visita) return <div className="flex items-center justify-center py-24 text-red-500 text-sm">Visita não encontrada</div>
 
   const pendencias: Pendencia[] = visita.pendencias || []
@@ -83,7 +84,6 @@ export default function VisitaDetail() {
           </div>
         )}
 
-        {/* Progresso das pendências */}
         {pendencias.length > 0 && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-1.5">
@@ -113,7 +113,7 @@ export default function VisitaDetail() {
               return (
                 <li key={p.id} className={`px-5 py-4 flex items-start gap-3 group ${atrasada ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
                   <button
-                    onClick={() => handleTogglePendencia(p)}
+                    onClick={() => toggleMutation.mutate(p)}
                     disabled={toggling === p.id}
                     className={`mt-0.5 w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center transition-all cursor-pointer ${
                       concluida ? 'bg-green-500 border-green-500 text-white' :

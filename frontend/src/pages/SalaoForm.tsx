@@ -1,56 +1,58 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 
 export default function SalaoForm() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const isEditing = !!id
-  const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [form, setForm] = useState({
     congregacao: '', codigoBRA: '', bairro: '', endereco: '',
     dataConstrucao: '', dataUltimaReforma: '', observacoes: '',
   })
 
+  const { data: salao } = useQuery({
+    queryKey: ['salao', id],
+    queryFn: () => api.get(`/saloes/${id}`).then((r) => r.data),
+    enabled: isEditing,
+  })
+
   useEffect(() => {
-    if (isEditing) {
-      api.get(`/saloes/${id}`).then((res) => {
-        const s = res.data
-        setForm({
-          congregacao: s.congregacao || '',
-          codigoBRA: s.codigoBRA || '',
-          bairro: s.bairro || '',
-          endereco: s.endereco || '',
-          dataConstrucao: s.dataConstrucao ? s.dataConstrucao.split('T')[0] : '',
-          dataUltimaReforma: s.dataUltimaReforma ? s.dataUltimaReforma.split('T')[0] : '',
-          observacoes: s.observacoes || '',
-        })
+    if (salao) {
+      setForm({
+        congregacao: salao.congregacao || '',
+        codigoBRA: salao.codigoBRA || '',
+        bairro: salao.bairro || '',
+        endereco: salao.endereco || '',
+        dataConstrucao: salao.dataConstrucao ? salao.dataConstrucao.split('T')[0] : '',
+        dataUltimaReforma: salao.dataUltimaReforma ? salao.dataUltimaReforma.split('T')[0] : '',
+        observacoes: salao.observacoes || '',
       })
     }
-  }, [id])
+  }, [salao])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const mutation = useMutation({
+    mutationFn: (payload: Omit<typeof form, 'dataConstrucao' | 'dataUltimaReforma'> & { dataConstrucao: string | null; dataUltimaReforma: string | null }) =>
+      isEditing ? api.put(`/saloes/${id}`, payload) : api.post('/saloes', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saloes'] })
+      if (isEditing) qc.invalidateQueries({ queryKey: ['salao', id] })
+      navigate('/saloes')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar')),
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setErro('')
-    setLoading(true)
-    try {
-      const payload = {
-        ...form,
-        dataConstrucao: form.dataConstrucao || null,
-        dataUltimaReforma: form.dataUltimaReforma || null,
-      }
-      if (isEditing) {
-        await api.put(`/saloes/${id}`, payload)
-      } else {
-        await api.post('/saloes', payload)
-      }
-      navigate('/saloes')
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao salvar')
-    } finally {
-      setLoading(false)
-    }
+    mutation.mutate({
+      ...form,
+      dataConstrucao: form.dataConstrucao || null,
+      dataUltimaReforma: form.dataUltimaReforma || null,
+    })
   }
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -109,9 +111,9 @@ export default function SalaoForm() {
         </div>
 
         <div className="flex gap-3 pt-2">
-          <button type="submit" disabled={loading}
+          <button type="submit" disabled={mutation.isPending}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
-            {loading ? 'Salvando...' : 'Salvar'}
+            {mutation.isPending ? 'Salvando...' : 'Salvar'}
           </button>
           <button type="button" onClick={() => navigate('/saloes')}
             className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium">

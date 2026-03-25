@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Avaliacao, Elemento } from '../types'
 import { CONDICAO_LABELS, CONDICAO_COLORS } from '../types'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 const CONDICOES = ['OTIMO', 'BOM', 'REGULAR', 'RUIM', 'CRITICO']
 
 export default function AvaliacoesPage() {
   const { id: salaoId } = useParams()
   const navigate = useNavigate()
-  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
-  const [elementos, setElementos] = useState<Elemento[]>([])
-  const [salaoNome, setSalaoNome] = useState('')
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -20,12 +20,10 @@ export default function AvaliacoesPage() {
     tipo: 'AMBOS', data: new Date().toISOString().split('T')[0], avaliador: '', observacoes: '',
   })
 
-  // DC-97: avaliação por elemento
   const [avalElementos, setAvalElementos] = useState<Record<string, {
     condicao: string; previsaoSubstituicao: string; planejamentoReforma: string; observacoes: string
   }>>({})
 
-  // DC-96: pendências
   const [pendencias, setPendencias] = useState<Array<{
     descricao: string; prioridade: string; risco: string; responsavel: string; dataLimite: string; elementoId: string
   }>>([])
@@ -33,38 +31,33 @@ export default function AvaliacoesPage() {
     descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [avRes, elRes, sRes] = await Promise.all([
-        api.get('/avaliacoes', { params: { salaoId } }),
-        api.get('/elementos', { params: { salaoId } }),
-        api.get(`/saloes/${salaoId}`),
-      ])
-      setAvaliacoes(avRes.data)
-      setElementos(elRes.data)
-      setSalaoNome(sRes.data.congregacao)
-      // Inicializa avaliação de elementos
-      const init: typeof avalElementos = {}
-      elRes.data.forEach((el: Elemento) => {
-        init[el.id] = { condicao: el.condicaoAtual, previsaoSubstituicao: '', planejamentoReforma: '', observacoes: '' }
-      })
-      setAvalElementos(init)
-    } catch { setErro('Erro ao carregar dados') }
-    finally { setLoading(false) }
-  }
+  const { data: avaliacoes = [], isLoading } = useQuery<Avaliacao[]>({
+    queryKey: ['avaliacoes', salaoId],
+    queryFn: () => api.get('/avaliacoes', { params: { salaoId } }).then((r) => r.data),
+  })
 
-  useEffect(() => { fetchTudo() }, [salaoId])
+  const { data: elementos = [] } = useQuery<Elemento[]>({
+    queryKey: ['elementos', salaoId],
+    queryFn: () =>
+      api.get('/elementos', { params: { salaoId } }).then((r) => {
+        const init: typeof avalElementos = {}
+        r.data.forEach((el: Elemento) => {
+          init[el.id] = { condicao: el.condicaoAtual, previsaoSubstituicao: '', planejamentoReforma: '', observacoes: '' }
+        })
+        setAvalElementos(init)
+        return r.data
+      }),
+  })
 
-  const handleAddPend = () => {
-    if (!novaPend.descricao.trim()) return
-    setPendencias((p) => [...p, { ...novaPend }])
-    setNovaPend({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
-  }
+  const { data: salao } = useQuery({
+    queryKey: ['salao', salaoId],
+    queryFn: () => api.get(`/saloes/${salaoId}`).then((r) => r.data),
+  })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErro('')
-    try {
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['avaliacoes', salaoId] })
+
+  const criarMutation = useMutation({
+    mutationFn: async () => {
       const includeDC97 = form.tipo === 'DC97' || form.tipo === 'AMBOS'
       const includeDC96 = form.tipo === 'DC96' || form.tipo === 'AMBOS'
 
@@ -83,37 +76,53 @@ export default function AvaliacoesPage() {
         elementos: elementosPayload,
       })
 
-      const avaliacaoId = avRes.data.id
-
       if (includeDC96) {
         for (const p of pendencias) {
           await api.post('/pendencias', {
-            salaoId, avaliacaoId,
+            salaoId, avaliacaoId: avRes.data.id,
             descricao: p.descricao, prioridade: p.prioridade, risco: p.risco || null,
             responsavel: p.responsavel || null, dataLimite: p.dataLimite || null, elementoId: p.elementoId || null,
           })
         }
       }
-
+    },
+    onSuccess: () => {
       setShowForm(false)
       setPendencias([])
       setForm({ tipo: 'AMBOS', data: new Date().toISOString().split('T')[0], avaliador: '', observacoes: '' })
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao salvar avaliação')
-    }
+      invalidar()
+      toast.success('Avaliação salva')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar avaliação')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/avaliacoes/${id}`),
+    onSuccess: () => { invalidar(); toast.success('Avaliação excluída') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir avaliação')),
+  })
+
+  const handleAddPend = () => {
+    if (!novaPend.descricao.trim()) return
+    setPendencias((p) => [...p, { ...novaPend }])
+    setNovaPend({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErro('')
+    criarMutation.mutate()
   }
 
   const handleExcluir = async (id: string) => {
-    if (!confirm('Excluir esta avaliação?')) return
-    try { await api.delete(`/avaliacoes/${id}`); fetchTudo() }
-    catch { setErro('Erro ao excluir avaliação') }
+    if (!await confirmDialog('Excluir esta avaliação?')) return
+    excluirMutation.mutate(id)
   }
 
   const showDC96 = form.tipo === 'DC96' || form.tipo === 'AMBOS'
   const showDC97 = form.tipo === 'DC97' || form.tipo === 'AMBOS'
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -126,7 +135,7 @@ export default function AvaliacoesPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm text-gray-400 mb-1">
-            <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salaoNome}</button>
+            <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salao?.congregacao}</button>
           </div>
           <h1 className="text-xl font-bold text-gray-900">Avaliações DC-96 / DC-97</h1>
         </div>

@@ -1,17 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Congregacao, Elemento } from '../types'
 import { VISITA_TIPO_LABELS } from '../types'
 
 export default function VisitaForm() {
   const { id: salaoId } = useParams()
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
-  const [congregacoes, setCongregacoes] = useState<Congregacao[]>([])
-  const [elementos, setElementos] = useState<Elemento[]>([])
-  const [salaoNome, setSalaoNome] = useState('')
 
   const [form, setForm] = useState({
     tipo: 'MANUTENCAO', data: new Date().toISOString().split('T')[0],
@@ -26,32 +23,23 @@ export default function VisitaForm() {
     descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
   })
 
-  useEffect(() => {
-    Promise.all([
-      api.get('/congregacoes', { params: { salaoId } }),
-      api.get('/elementos', { params: { salaoId } }),
-      api.get(`/saloes/${salaoId}`),
-    ]).then(([cRes, elRes, sRes]) => {
-      setCongregacoes(cRes.data)
-      setElementos(elRes.data)
-      setSalaoNome(sRes.data.congregacao)
-    })
-  }, [salaoId])
+  const { data: congregacoes = [] } = useQuery<Congregacao[]>({
+    queryKey: ['congregacoes', salaoId],
+    queryFn: () => api.get('/congregacoes', { params: { salaoId } }).then((r) => r.data),
+  })
 
-  const handleAddPendencia = () => {
-    if (!novaPendencia.descricao.trim()) return
-    setPendencias((prev) => [...prev, { ...novaPendencia }])
-    setNovaPendencia({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
-  }
+  const { data: elementos = [] } = useQuery<Elemento[]>({
+    queryKey: ['elementos', salaoId],
+    queryFn: () => api.get('/elementos', { params: { salaoId } }).then((r) => r.data),
+  })
 
-  const handleRemovePendencia = (i: number) =>
-    setPendencias((prev) => prev.filter((_, idx) => idx !== i))
+  const { data: salao } = useQuery({
+    queryKey: ['salao', salaoId],
+    queryFn: () => api.get(`/saloes/${salaoId}`).then((r) => r.data),
+  })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErro('')
-    setLoading(true)
-    try {
+  const mutation = useMutation({
+    mutationFn: async () => {
       const visitaRes = await api.post('/visitas', {
         salaoId,
         tipo: form.tipo,
@@ -61,34 +49,36 @@ export default function VisitaForm() {
         relatorio: form.relatorio || null,
       })
       const visitaId = visitaRes.data.id
-
-      // Criar pendências vinculadas à visita
       for (const p of pendencias) {
         await api.post('/pendencias', {
-          salaoId,
-          visitaId,
-          descricao: p.descricao,
-          prioridade: p.prioridade,
-          risco: p.risco || null,
-          responsavel: p.responsavel || null,
-          dataLimite: p.dataLimite || null,
-          elementoId: p.elementoId || null,
+          salaoId, visitaId,
+          descricao: p.descricao, prioridade: p.prioridade, risco: p.risco || null,
+          responsavel: p.responsavel || null, dataLimite: p.dataLimite || null, elementoId: p.elementoId || null,
         })
       }
+      return visitaId
+    },
+    onSuccess: (visitaId) => navigate(`/visitas/${visitaId}`),
+    onError: (err) => setErro(apiErro(err, 'Erro ao registrar visita')),
+  })
 
-      navigate(`/visitas/${visitaId}`)
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao registrar visita')
-    } finally {
-      setLoading(false)
-    }
+  const handleAddPendencia = () => {
+    if (!novaPendencia.descricao.trim()) return
+    setPendencias((prev) => [...prev, { ...novaPendencia }])
+    setNovaPendencia({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErro('')
+    mutation.mutate()
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <div>
         <div className="text-sm text-gray-400 mb-1">
-          <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salaoNome}</button>
+          <button onClick={() => navigate(`/saloes/${salaoId}`)} className="hover:text-blue-500">← {salao?.congregacao}</button>
         </div>
         <h1 className="text-xl font-bold text-gray-900">Registrar Visita</h1>
       </div>
@@ -143,7 +133,6 @@ export default function VisitaForm() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-gray-700">Pendências identificadas na visita</h2>
 
-          {/* Adicionar pendência */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-2">
             <textarea value={novaPendencia.descricao}
               onChange={(e) => setNovaPendencia((f) => ({ ...f, descricao: e.target.value }))}
@@ -189,7 +178,6 @@ export default function VisitaForm() {
             </div>
           </div>
 
-          {/* Lista de pendências adicionadas */}
           {pendencias.length > 0 && (
             <ul className="space-y-2">
               {pendencias.map((p, i) => (
@@ -203,7 +191,7 @@ export default function VisitaForm() {
                       {p.dataLimite && <span className="text-xs text-gray-400">📅 {new Date(p.dataLimite).toLocaleDateString('pt-BR')}</span>}
                     </div>
                   </div>
-                  <button type="button" onClick={() => handleRemovePendencia(i)}
+                  <button type="button" onClick={() => setPendencias((prev) => prev.filter((_, idx) => idx !== i))}
                     className="text-gray-300 hover:text-red-400 shrink-0">✕</button>
                 </li>
               ))}
@@ -212,9 +200,9 @@ export default function VisitaForm() {
         </div>
 
         <div className="flex gap-3">
-          <button type="submit" disabled={loading}
+          <button type="submit" disabled={mutation.isPending}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
-            {loading ? 'Salvando...' : 'Registrar visita'}
+            {mutation.isPending ? 'Salvando...' : 'Registrar visita'}
           </button>
           <button type="button" onClick={() => navigate(`/saloes/${salaoId}`)}
             className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium">

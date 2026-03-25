@@ -1,17 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
-import api from '../services/api'
+import { useState, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Pessoa, Salao } from '../types'
 import { FUNCAO_LABELS, ESPECIALIDADE_LABELS } from '../types'
 import PaginationControls from '../components/PaginationControls'
 import { getListMeta, type ListMeta } from '../services/pagination'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 const FUNCOES = Object.keys(FUNCAO_LABELS)
 const ESPECIALIDADES = Object.keys(ESPECIALIDADE_LABELS)
 
 export default function PessoasPage() {
-  const [pessoas, setPessoas] = useState<Pessoa[]>([])
-  const [saloes, setSaloes] = useState<Salao[]>([])
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [editando, setEditando] = useState<Pessoa | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -24,20 +25,34 @@ export default function PessoasPage() {
     autorizadoAltoRisco: false, observacoesAutorizacao: '', funcoes: [] as string[], salaoIds: [] as string[], especialidades: [] as string[],
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [pRes, sRes] = await Promise.all([
-        api.get('/pessoas', { params: { page, pageSize: 24, sortBy: 'nome', sortOrder: 'asc' } }),
-        api.get('/saloes'),
-      ])
-      setPessoas(pRes.data)
-      setMeta(getListMeta(pRes.headers))
-      setSaloes(sRes.data)
-    } catch { setErro('Erro ao carregar dados') }
-    finally { setLoading(false) }
-  }
+  const { data: pessoas = [], isLoading } = useQuery<Pessoa[]>({
+    queryKey: ['pessoas', page],
+    queryFn: () =>
+      api.get('/pessoas', { params: { page, pageSize: 24, sortBy: 'nome', sortOrder: 'asc' } }).then((r) => {
+        setMeta(getListMeta(r.headers))
+        return r.data
+      }),
+  })
 
-  useEffect(() => { fetchTudo() }, [page])
+  const { data: saloes = [] } = useQuery<Salao[]>({
+    queryKey: ['saloes'],
+    queryFn: () => api.get('/saloes').then((r) => r.data),
+  })
+
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['pessoas'] })
+
+  const salvarMutation = useMutation({
+    mutationFn: (payload: any) =>
+      editando ? api.put(`/pessoas/${editando.id}`, payload) : api.post('/pessoas', payload),
+    onSuccess: () => { resetForm(); setShowForm(false); setEditando(null); invalidar(); toast.success('Pessoa salva') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar pessoa')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/pessoas/${id}`),
+    onSuccess: () => { invalidar(); toast.success('Pessoa excluída') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir pessoa')),
+  })
 
   const resetForm = () => setForm({
     nome: '', telefone: '', email: '',
@@ -72,36 +87,6 @@ export default function PessoasPage() {
     }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      const payload = {
-        ...form,
-        telefone: form.telefone || null,
-        email: form.email || null,
-        observacoesAutorizacao: form.observacoesAutorizacao || null,
-        salaoIds: form.salaoIds,
-      }
-      if (editando) {
-        await api.put(`/pessoas/${editando.id}`, payload)
-      } else {
-        await api.post('/pessoas', payload)
-      }
-      resetForm()
-      setShowForm(false)
-      setEditando(null)
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao salvar pessoa')
-    }
-  }
-
-  const handleExcluir = async (id: string) => {
-    if (!confirm('Excluir esta pessoa?')) return
-    try { await api.delete(`/pessoas/${id}`); fetchTudo() }
-    catch { setErro('Erro ao excluir pessoa') }
-  }
-
   const toggleFuncao = (f: string) => {
     setForm((prev) => ({
       ...prev,
@@ -109,7 +94,23 @@ export default function PessoasPage() {
     }))
   }
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    salvarMutation.mutate({
+      ...form,
+      telefone: form.telefone || null,
+      email: form.email || null,
+      observacoesAutorizacao: form.observacoesAutorizacao || null,
+      salaoIds: form.salaoIds,
+    })
+  }
+
+  const handleExcluir = async (id: string) => {
+    if (!await confirmDialog('Excluir esta pessoa?')) return
+    excluirMutation.mutate(id)
+  }
+
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
 
   const gruposComPessoas = FUNCOES.filter((funcao) =>
     pessoas.some((p) => p.funcoes.some((f) => f.funcao === funcao))

@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react'
-import api from '../services/api'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Salao } from '../types'
 import PaginationControls from '../components/PaginationControls'
 import { getListMeta, type ListMeta } from '../services/pagination'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 interface OrcamentoAnual {
   id: string; salaoId: string; ano: number
@@ -23,11 +26,7 @@ const CATEGORIAS: Record<string, string> = {
 const ANO_ATUAL = new Date().getFullYear()
 
 export default function FinanceiroPage() {
-  const [saloes, setSaloes] = useState<Salao[]>([])
-  const [orcamentos, setOrcamentos] = useState<OrcamentoAnual[]>([])
-  const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
-  const [totalGasto, setTotalGasto] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [erro, setErro] = useState('')
   const [pageOrc, setPageOrc] = useState(1)
   const [pageLanc, setPageLanc] = useState(1)
@@ -45,78 +44,100 @@ export default function FinanceiroPage() {
     salaoId: '', descricao: '', valor: '', data: new Date().toISOString().split('T')[0], categoria: 'MATERIAL',
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [sRes, orcRes] = await Promise.all([
-        api.get('/saloes'),
-        api.get('/financeiro/orcamentos', {
-          params: { salaoId: filtroSalaoId || undefined, ano: filtroAno, page: pageOrc, pageSize: 10, sortBy: 'ano', sortOrder: 'desc' },
-        }),
-      ])
-      setSaloes(sRes.data)
-      setOrcamentos(orcRes.data)
-      setMetaOrc(getListMeta(orcRes.headers))
+  const { data: saloes = [] } = useQuery<Salao[]>({
+    queryKey: ['saloes'],
+    queryFn: () => api.get('/saloes').then((r) => r.data),
+  })
 
-      const lancRes = await api.get('/financeiro/lancamentos', {
+  const { data: orcamentos = [], isLoading } = useQuery<OrcamentoAnual[]>({
+    queryKey: ['orcamentos', filtroSalaoId, filtroAno, pageOrc],
+    queryFn: () =>
+      api.get('/financeiro/orcamentos', {
+        params: { salaoId: filtroSalaoId || undefined, ano: filtroAno, page: pageOrc, pageSize: 10, sortBy: 'ano', sortOrder: 'desc' },
+      }).then((r) => {
+        setMetaOrc(getListMeta(r.headers))
+        return r.data
+      }),
+  })
+
+  const { data: lancData } = useQuery<{ lancamentos: Lancamento[]; total: number }>({
+    queryKey: ['lancamentos', filtroSalaoId, filtroAno, pageLanc],
+    queryFn: () =>
+      api.get('/financeiro/lancamentos', {
         params: { salaoId: filtroSalaoId || undefined, ano: filtroAno, page: pageLanc, pageSize: 10, sortBy: 'data', sortOrder: 'desc' },
-      })
-      setLancamentos(lancRes.data.lancamentos)
-      setTotalGasto(lancRes.data.total)
-      setMetaLanc(getListMeta(lancRes.headers))
-    } catch { setErro('Erro ao carregar dados financeiros') }
-    finally { setLoading(false) }
-  }
+      }).then((r) => {
+        setMetaLanc(getListMeta(r.headers))
+        return r.data
+      }),
+  })
 
-  useEffect(() => { fetchTudo() }, [filtroSalaoId, filtroAno, pageOrc, pageLanc])
+  const lancamentos = lancData?.lancamentos ?? []
+  const totalGasto = lancData?.total ?? 0
+
+  const invalidarOrc = () => qc.invalidateQueries({ queryKey: ['orcamentos'] })
+  const invalidarLanc = () => qc.invalidateQueries({ queryKey: ['lancamentos'] })
+
+  const salvarOrcMutation = useMutation({
+    mutationFn: (payload: any) => api.post('/financeiro/orcamentos', payload),
+    onSuccess: () => {
+      setShowFormOrc(false)
+      setFormOrc({ salaoId: '', ano: ANO_ATUAL, orcamentoPrevisto: '', saldoReserva: '', observacoes: '' })
+      invalidarOrc()
+      toast.success('Orçamento salvo')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar orçamento')),
+  })
+
+  const salvarLancMutation = useMutation({
+    mutationFn: (payload: any) => api.post('/financeiro/lancamentos', payload),
+    onSuccess: () => {
+      setShowFormLanc(false)
+      setFormLanc({ salaoId: '', descricao: '', valor: '', data: new Date().toISOString().split('T')[0], categoria: 'MATERIAL' })
+      invalidarLanc()
+      toast.success('Lançamento registrado')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao registrar lançamento')),
+  })
+
+  const excluirLancMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/financeiro/lancamentos/${id}`),
+    onSuccess: () => { invalidarLanc(); toast.success('Lançamento excluído') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir lançamento')),
+  })
 
   const orcamentoSelecionado = orcamentos.find((o) => o.salaoId === filtroSalaoId) || orcamentos[0]
   const saldoDisponivel = orcamentoSelecionado
     ? orcamentoSelecionado.orcamentoPrevisto + orcamentoSelecionado.saldoReserva - totalGasto
     : null
 
-  const handleSubmitOrc = async (e: React.FormEvent) => {
+  const handleSubmitOrc = (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      await api.post('/financeiro/orcamentos', {
-        salaoId: formOrc.salaoId, ano: Number(formOrc.ano),
-        orcamentoPrevisto: Number(formOrc.orcamentoPrevisto),
-        saldoReserva: Number(formOrc.saldoReserva || 0),
-        observacoes: formOrc.observacoes || null,
-      })
-      setShowFormOrc(false)
-      setFormOrc({ salaoId: '', ano: ANO_ATUAL, orcamentoPrevisto: '', saldoReserva: '', observacoes: '' })
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao salvar orçamento')
-    }
+    salvarOrcMutation.mutate({
+      salaoId: formOrc.salaoId, ano: Number(formOrc.ano),
+      orcamentoPrevisto: Number(formOrc.orcamentoPrevisto),
+      saldoReserva: Number(formOrc.saldoReserva || 0),
+      observacoes: formOrc.observacoes || null,
+    })
   }
 
-  const handleSubmitLanc = async (e: React.FormEvent) => {
+  const handleSubmitLanc = (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      await api.post('/financeiro/lancamentos', {
-        salaoId: formLanc.salaoId || filtroSalaoId,
-        orcamentoAnualId: orcamentoSelecionado?.id || null,
-        descricao: formLanc.descricao,
-        valor: Number(formLanc.valor),
-        data: formLanc.data,
-        categoria: formLanc.categoria,
-      })
-      setShowFormLanc(false)
-      setFormLanc({ salaoId: '', descricao: '', valor: '', data: new Date().toISOString().split('T')[0], categoria: 'MATERIAL' })
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao registrar lançamento')
-    }
+    salvarLancMutation.mutate({
+      salaoId: formLanc.salaoId || filtroSalaoId,
+      orcamentoAnualId: orcamentoSelecionado?.id || null,
+      descricao: formLanc.descricao,
+      valor: Number(formLanc.valor),
+      data: formLanc.data,
+      categoria: formLanc.categoria,
+    })
   }
 
   const handleExcluirLanc = async (id: string) => {
-    if (!confirm('Excluir lançamento?')) return
-    try { await api.delete(`/financeiro/lancamentos/${id}`); fetchTudo() }
-    catch { setErro('Erro ao excluir lançamento') }
+    if (!await confirmDialog('Excluir lançamento?')) return
+    excluirLancMutation.mutate(id)
   }
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">

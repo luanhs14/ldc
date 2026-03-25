@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import api from '../services/api'
 import { useAuth } from '../contexts/useAuth'
 
@@ -44,23 +44,19 @@ function primeiroNome(nome: string) {
 }
 
 export default function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
   const { user } = useAuth()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.get('/dashboard').then((r) => r.data as DashboardData),
+  })
 
-  useEffect(() => {
-    api.get('/dashboard').then((res) => { setData(res.data); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
-
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
-  if (!data) return <div className="flex items-center justify-center py-24 text-red-500 text-sm">Erro ao carregar dados</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isError || !data) return <div className="flex items-center justify-center py-24 text-red-500 text-sm">Erro ao carregar dados</div>
 
   const { alertas } = data
   const totalAlertas = alertas.pendenciasAtrasadas.length + alertas.elementosCriticos.length +
     alertas.garantiasVencendo.length + alertas.saloesSemAvaliacao.length
 
-  // Alertas ordenados por gravidade
   const blocosAlertas = [
     {
       key: 'pendencias',

@@ -1,111 +1,131 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Salao, Pendencia, Visita, Elemento } from '../types'
 import { CONDICAO_COLORS, CONDICAO_LABELS, PRIORIDADE_COLORS, VISITA_TIPO_LABELS } from '../types'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 type Aba = 'pendencias' | 'elementos' | 'visitas' | 'historico'
 
 export default function SalaoDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [salao, setSalao] = useState<Salao | null>(null)
-  const [pendencias, setPendencias] = useState<Pendencia[]>([])
-  const [visitas, setVisitas] = useState<Visita[]>([])
+  const qc = useQueryClient()
   const [aba, setAba] = useState<Aba>('pendencias')
-  const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
   const [showFormPendencia, setShowFormPendencia] = useState(false)
   const [erro, setErro] = useState('')
-  const [, setElementoTipos] = useState<any[]>([])
 
   const [novaPendencia, setNovaPendencia] = useState({
     descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
   })
 
-  // Edição inline de pendência
   const [editandoPendencia, setEditandoPendencia] = useState<string | null>(null)
   const [editPendenciaForm, setEditPendenciaForm] = useState({
     descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '',
   })
 
-  // Edição inline de visita
   const [editandoVisita, setEditandoVisita] = useState<string | null>(null)
   const [editVisitaForm, setEditVisitaForm] = useState({
     tipo: '', data: '', visitanteNome: '', relatorio: '',
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [salaoRes, pendRes, visitRes, tiposRes] = await Promise.all([
-        api.get(`/saloes/${id}`),
-        api.get('/pendencias', { params: { salaoId: id } }),
-        api.get('/visitas', { params: { salaoId: id } }),
-        api.get('/elementos/tipos'),
-      ])
-      setSalao(salaoRes.data)
-      setPendencias(pendRes.data)
-      setVisitas(visitRes.data)
-      setElementoTipos(tiposRes.data)
-    } catch {
-      setErro('Erro ao carregar dados')
-    } finally {
-      setLoading(false)
-    }
+  const { data: salao, isLoading: loadingSalao } = useQuery<Salao>({
+    queryKey: ['salao', id],
+    queryFn: () => api.get(`/saloes/${id}`).then((r) => r.data),
+  })
+
+  const { data: pendencias = [], isLoading: loadingPend } = useQuery<Pendencia[]>({
+    queryKey: ['pendencias', id],
+    queryFn: () => api.get('/pendencias', { params: { salaoId: id } }).then((r) => r.data),
+  })
+
+  const { data: visitas = [], isLoading: loadingVisitas } = useQuery<Visita[]>({
+    queryKey: ['visitas', id],
+    queryFn: () => api.get('/visitas', { params: { salaoId: id } }).then((r) => r.data),
+  })
+
+  const isLoading = loadingSalao || loadingPend || loadingVisitas
+
+  const invalidarTudo = () => {
+    qc.invalidateQueries({ queryKey: ['salao', id] })
+    qc.invalidateQueries({ queryKey: ['pendencias', id] })
+    qc.invalidateQueries({ queryKey: ['visitas', id] })
   }
 
-  useEffect(() => { fetchTudo() }, [id])
+  const toggleMutation = useMutation({
+    mutationFn: ({ pendId, novoStatus }: { pendId: string; novoStatus: string }) =>
+      api.put(`/pendencias/${pendId}`, { status: novoStatus }),
+    onMutate: ({ pendId }) => setToggling(pendId),
+    onSettled: () => setToggling(null),
+    onSuccess: invalidarTudo,
+    onError: (err) => setErro(apiErro(err, 'Erro ao atualizar pendência')),
+  })
+
+  const addPendenciaMutation = useMutation({
+    mutationFn: (payload: any) => api.post('/pendencias', payload),
+    onSuccess: () => {
+      setShowFormPendencia(false)
+      setNovaPendencia({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
+      invalidarTudo()
+      toast.success('Pendência criada')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao criar pendência')),
+  })
+
+  const deletePendenciaMutation = useMutation({
+    mutationFn: (pendId: string) => api.delete(`/pendencias/${pendId}`),
+    onSuccess: () => { invalidarTudo(); toast.success('Pendência excluída') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir pendência')),
+  })
+
+  const editPendenciaMutation = useMutation({
+    mutationFn: ({ pendId, payload }: { pendId: string; payload: any }) =>
+      api.put(`/pendencias/${pendId}`, payload),
+    onSuccess: () => { setEditandoPendencia(null); invalidarTudo(); toast.success('Pendência atualizada') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar pendência')),
+  })
+
+  const deleteSalaoMutation = useMutation({
+    mutationFn: () => api.delete(`/saloes/${id}`),
+    onSuccess: () => navigate('/saloes'),
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir salão')),
+  })
+
+  const editVisitaMutation = useMutation({
+    mutationFn: ({ visitaId, payload }: { visitaId: string; payload: any }) =>
+      api.put(`/visitas/${visitaId}`, payload),
+    onSuccess: () => { setEditandoVisita(null); invalidarTudo(); toast.success('Visita atualizada') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar visita')),
+  })
+
+  const deleteVisitaMutation = useMutation({
+    mutationFn: (visitaId: string) => api.delete(`/visitas/${visitaId}`),
+    onSuccess: () => { invalidarTudo(); toast.success('Visita excluída') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir visita')),
+  })
 
   const pendentesAtivas = pendencias.filter((p) => p.status !== 'CONCLUIDO' && p.status !== 'CANCELADO')
   const pendentesTotal = pendencias.length
   const concluidasTotal = pendencias.filter((p) => p.status === 'CONCLUIDO').length
   const progresso = pendentesTotal > 0 ? Math.round((concluidasTotal / pendentesTotal) * 100) : 0
 
-  const handleTogglePendencia = async (p: Pendencia) => {
-    setToggling(p.id)
-    try {
-      const novoStatus = p.status === 'CONCLUIDO' ? 'PENDENTE' : 'CONCLUIDO'
-      await api.put(`/pendencias/${p.id}`, { status: novoStatus })
-      fetchTudo()
-    } catch {
-      setErro('Erro ao atualizar pendência')
-    } finally {
-      setToggling(null)
-    }
+  const handleTogglePendencia = (p: Pendencia) => {
+    const novoStatus = p.status === 'CONCLUIDO' ? 'PENDENTE' : 'CONCLUIDO'
+    toggleMutation.mutate({ pendId: p.id, novoStatus })
   }
 
-  const handleAddPendencia = async (e: React.FormEvent) => {
+  const handleAddPendencia = (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      await api.post('/pendencias', {
-        salaoId: id,
-        ...novaPendencia,
-        risco: novaPendencia.risco || null,
-        dataLimite: novaPendencia.dataLimite || null,
-        elementoId: novaPendencia.elementoId || null,
-      })
-      setShowFormPendencia(false)
-      setNovaPendencia({ descricao: '', prioridade: 'MEDIA', risco: '', responsavel: '', dataLimite: '', elementoId: '' })
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao criar pendência')
-    }
-  }
-
-  const handleDeletePendencia = async (pendId: string) => {
-    if (!confirm('Excluir esta pendência?')) return
-    try {
-      await api.delete(`/pendencias/${pendId}`)
-      fetchTudo()
-    } catch { setErro('Erro ao excluir pendência') }
-  }
-
-  const handleDeleteSalao = async () => {
-    if (!confirm('Excluir este salão e todos os seus dados?')) return
-    try {
-      await api.delete(`/saloes/${id}`)
-      navigate('/saloes')
-    } catch { setErro('Erro ao excluir salão') }
+    addPendenciaMutation.mutate({
+      salaoId: id,
+      ...novaPendencia,
+      risco: novaPendencia.risco || null,
+      dataLimite: novaPendencia.dataLimite || null,
+      elementoId: novaPendencia.elementoId || null,
+    })
   }
 
   const handleIniciarEditPendencia = (p: Pendencia) => {
@@ -120,17 +140,16 @@ export default function SalaoDetail() {
     })
   }
 
-  const handleSalvarEditPendencia = async (pendId: string) => {
-    try {
-      await api.put(`/pendencias/${pendId}`, {
+  const handleSalvarEditPendencia = (pendId: string) => {
+    editPendenciaMutation.mutate({
+      pendId,
+      payload: {
         ...editPendenciaForm,
         risco: editPendenciaForm.risco || null,
         dataLimite: editPendenciaForm.dataLimite || null,
         elementoId: editPendenciaForm.elementoId || null,
-      })
-      setEditandoPendencia(null)
-      fetchTudo()
-    } catch { setErro('Erro ao salvar pendência') }
+      },
+    })
   }
 
   const handleIniciarEditVisita = (v: Visita) => {
@@ -143,30 +162,21 @@ export default function SalaoDetail() {
     })
   }
 
-  const handleSalvarEditVisita = async (visitaId: string) => {
-    try {
-      await api.put(`/visitas/${visitaId}`, {
+  const handleSalvarEditVisita = (visitaId: string) => {
+    editVisitaMutation.mutate({
+      visitaId,
+      payload: {
         ...editVisitaForm,
         visitanteNome: editVisitaForm.visitanteNome || null,
         relatorio: editVisitaForm.relatorio || null,
-      })
-      setEditandoVisita(null)
-      fetchTudo()
-    } catch { setErro('Erro ao salvar visita') }
-  }
-
-  const handleDeleteVisita = async (visitaId: string) => {
-    if (!confirm('Excluir esta visita?')) return
-    try {
-      await api.delete(`/visitas/${visitaId}`)
-      fetchTudo()
-    } catch { setErro('Erro ao excluir visita') }
+      },
+    })
   }
 
   const isAtrasada = (p: Pendencia) =>
     p.status !== 'CONCLUIDO' && !!p.dataLimite && new Date(p.dataLimite) < new Date()
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
   if (!salao) return <div className="flex items-center justify-center py-24 text-red-500 text-sm">Salão não encontrado</div>
 
   const elementos: Elemento[] = salao.elementos || []
@@ -204,7 +214,8 @@ export default function SalaoDetail() {
             <Link to={`/saloes/${id}/editar`} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
               Editar
             </Link>
-            <button onClick={handleDeleteSalao} className="text-sm text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg border border-red-100 hover:border-red-200 transition-colors">
+            <button onClick={async () => { if (await confirmDialog('Excluir este salão e todos os seus dados?')) deleteSalaoMutation.mutate() }}
+              className="text-sm text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg border border-red-100 hover:border-red-200 transition-colors">
               Excluir
             </button>
           </div>
@@ -432,7 +443,7 @@ export default function SalaoDetail() {
                               className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded border border-gray-200 hover:border-blue-300">
                               Editar
                             </button>
-                            <button onClick={() => handleDeletePendencia(p.id)}
+                            <button onClick={async () => { if (await confirmDialog('Excluir esta pendência?')) deletePendenciaMutation.mutate(p.id) }}
                               className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-200">
                               Excluir
                             </button>
@@ -573,7 +584,7 @@ export default function SalaoDetail() {
                               className="text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded border border-gray-200 hover:border-blue-300">
                               Editar
                             </button>
-                            <button onClick={() => handleDeleteVisita(v.id)}
+                            <button onClick={async () => { if (await confirmDialog('Excluir esta visita?')) deleteVisitaMutation.mutate(v.id) }}
                               className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-200">
                               Excluir
                             </button>
@@ -597,15 +608,10 @@ export default function SalaoDetail() {
 }
 
 function HistoricoTab({ salaoId }: { salaoId: string }) {
-  const [eventos, setEventos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    api.get(`/saloes/${salaoId}/historico`).then((res) => {
-      setEventos(res.data)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [salaoId])
+  const { data: eventos = [], isLoading } = useQuery<any[]>({
+    queryKey: ['historico', salaoId],
+    queryFn: () => api.get(`/saloes/${salaoId}/historico`).then((r) => r.data),
+  })
 
   const tipoIcon: Record<string, string> = {
     VISITA: '🏠', AVALIACAO: '📋', PENDENCIA_CONCLUIDA: '✅', INCIDENTE: '⚠',
@@ -614,7 +620,7 @@ function HistoricoTab({ salaoId }: { salaoId: string }) {
     VISITA: 'Visita', AVALIACAO: 'Avaliação', PENDENCIA_CONCLUIDA: 'Pendência resolvida', INCIDENTE: 'Incidente',
   }
 
-  if (loading) return <div className="px-5 py-12 text-center text-gray-400 text-sm">Carregando histórico...</div>
+  if (isLoading) return <div className="px-5 py-12 text-center text-gray-400 text-sm">Carregando histórico...</div>
   if (eventos.length === 0) return <div className="px-5 py-12 text-center text-gray-400 text-sm">Nenhum evento registrado.</div>
 
   const porAno = eventos.reduce((acc: Record<string, any[]>, ev) => {

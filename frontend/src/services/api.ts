@@ -19,3 +19,9 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+/** Extrai a mensagem de erro da resposta da API e loga o erro no console. */
+export function apiErro(err: unknown, fallback: string): string {
+  console.error(err)
+  return (err as any)?.response?.data?.error || fallback
+}

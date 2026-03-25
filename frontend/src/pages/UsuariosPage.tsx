@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
-import api from '../services/api'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import { useAuth } from '../contexts/useAuth'
 import PaginationControls from '../components/PaginationControls'
 import { getListMeta, type ListMeta } from '../services/pagination'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 interface Usuario {
   id: string
@@ -17,12 +20,11 @@ const roleLabel: Record<string, string> = { ADMIN: 'Admin', OPERADOR: 'Operador'
 const empty = { nome: '', usuario: '', senha: '', role: 'OPERADOR' }
 
 export default function UsuariosPage() {
+  const qc = useQueryClient()
   const { user: me } = useAuth()
-  const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [form, setForm] = useState(empty)
   const [editando, setEditando] = useState<string | null>(null)
   const [erro, setErro] = useState('')
-  const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [page, setPage] = useState(1)
   const [sortBy, setSortBy] = useState('nome')
@@ -44,13 +46,29 @@ export default function UsuariosPage() {
     return <span className="ml-1 text-blue-500">{sortOrder === 'asc' ? '↑' : '↓'}</span>
   }
 
-  const carregar = () =>
-    api.get('/usuarios', { params: { page, pageSize: 10, sortBy, sortOrder } }).then((r) => {
-      setUsuarios(r.data)
-      setMeta(getListMeta(r.headers))
-    })
+  const { data: usuarios = [] } = useQuery<Usuario[]>({
+    queryKey: ['usuarios', page, sortBy, sortOrder],
+    queryFn: () =>
+      api.get('/usuarios', { params: { page, pageSize: 10, sortBy, sortOrder } }).then((r) => {
+        setMeta(getListMeta(r.headers))
+        return r.data
+      }),
+  })
 
-  useEffect(() => { carregar() }, [page, sortBy, sortOrder])
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['usuarios'] })
+
+  const salvarMutation = useMutation({
+    mutationFn: (payload: typeof form) =>
+      editando ? api.put(`/usuarios/${editando}`, payload) : api.post('/usuarios', payload),
+    onSuccess: () => { fechar(); invalidar(); toast.success('Usuário salvo') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/usuarios/${id}`),
+    onSuccess: () => { invalidar(); toast.success('Usuário excluído') },
+    onError: (err) => { console.error(err); toast.error((err as any)?.response?.data?.error || 'Erro ao excluir usuário') },
+  })
 
   const abrir = (u?: Usuario) => {
     setErro('')
@@ -66,32 +84,14 @@ export default function UsuariosPage() {
 
   const fechar = () => { setShowForm(false); setErro('') }
 
-  const salvar = async () => {
+  const salvar = () => {
     setErro('')
-    setLoading(true)
-    try {
-      if (editando) {
-        await api.put(`/usuarios/${editando}`, form)
-      } else {
-        await api.post('/usuarios', form)
-      }
-      await carregar()
-      fechar()
-    } catch (e: any) {
-      setErro(e.response?.data?.error || 'Erro ao salvar')
-    } finally {
-      setLoading(false)
-    }
+    salvarMutation.mutate(form)
   }
 
   const excluir = async (id: string) => {
-    if (!confirm('Excluir este usuário?')) return
-    try {
-      await api.delete(`/usuarios/${id}`)
-      await carregar()
-    } catch (e: any) {
-      alert(e.response?.data?.error || 'Erro ao excluir')
-    }
+    if (!await confirmDialog('Excluir este usuário?')) return
+    excluirMutation.mutate(id)
   }
 
   return (
@@ -220,10 +220,10 @@ export default function UsuariosPage() {
               </button>
               <button
                 onClick={salvar}
-                disabled={loading}
+                disabled={salvarMutation.isPending}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Salvando...' : 'Salvar'}
+                {salvarMutation.isPending ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
           </div>

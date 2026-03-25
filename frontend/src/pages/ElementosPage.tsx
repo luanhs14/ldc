@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import api from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api, { apiErro } from '../services/api'
 import type { Elemento, ElementoTipo, Equipamento } from '../types'
 import { CONDICAO_COLORS, CONDICAO_LABELS } from '../types'
+import { toast } from 'sonner'
+import { confirmDialog } from '../components/ConfirmModal'
 
 const CONDICOES = ['OTIMO', 'BOM', 'REGULAR', 'RUIM', 'CRITICO']
 
 export default function ElementosPage() {
   const { id: salaoId } = useParams()
-  const [elementos, setElementos] = useState<Elemento[]>([])
-  const [tipos, setTipos] = useState<ElementoTipo[]>([])
-  const [salaoNome, setSalaoNome] = useState('')
-  const [loading, setLoading] = useState(true)
+  const qc = useQueryClient()
   const [expandido, setExpandido] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editando, setEditando] = useState<Elemento | null>(null)
@@ -22,52 +22,53 @@ export default function ElementosPage() {
     condicaoAtual: 'BOM', vidaUtilAnos: '', proximaManutencao: '', observacoes: '',
   })
 
-  const fetchTudo = async () => {
-    try {
-      const [elRes, tiposRes, salaoRes] = await Promise.all([
-        api.get('/elementos', { params: { salaoId } }),
-        api.get('/elementos/tipos'),
-        api.get(`/saloes/${salaoId}`),
-      ])
-      setElementos(elRes.data)
-      setTipos(tiposRes.data)
-      setSalaoNome(salaoRes.data.congregacao)
-    } catch { setErro('Erro ao carregar dados') }
-    finally { setLoading(false) }
-  }
+  const { data: elementos = [], isLoading } = useQuery<Elemento[]>({
+    queryKey: ['elementos', salaoId],
+    queryFn: () => api.get('/elementos', { params: { salaoId } }).then((r) => r.data),
+  })
 
-  useEffect(() => { fetchTudo() }, [salaoId])
+  const { data: tipos = [] } = useQuery<ElementoTipo[]>({
+    queryKey: ['elementoTipos'],
+    queryFn: () => api.get('/elementos/tipos').then((r) => r.data),
+  })
+
+  const { data: salao } = useQuery({
+    queryKey: ['salao', salaoId],
+    queryFn: () => api.get(`/saloes/${salaoId}`).then((r) => r.data),
+  })
+
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['elementos', salaoId] })
+
+  const salvarMutation = useMutation({
+    mutationFn: (payload: any) =>
+      editando ? api.put(`/elementos/${editando.id}`, payload) : api.post('/elementos', payload),
+    onSuccess: () => { resetForm(); setShowForm(false); setEditando(null); invalidar(); toast.success('Elemento salvo') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao salvar elemento')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/elementos/${id}`),
+    onSuccess: () => { invalidar(); toast.success('Elemento excluído') },
+    onError: (err) => setErro(apiErro(err, 'Erro ao excluir elemento')),
+  })
 
   const resetForm = () => setForm({
     elementoTipoId: '', nomeCustomizado: '', dataInstalacao: '',
     condicaoAtual: 'BOM', vidaUtilAnos: '', proximaManutencao: '', observacoes: '',
   })
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      const payload = {
-        salaoId,
-        elementoTipoId: form.elementoTipoId,
-        nomeCustomizado: form.nomeCustomizado || null,
-        dataInstalacao: form.dataInstalacao || null,
-        condicaoAtual: form.condicaoAtual,
-        vidaUtilAnos: form.vidaUtilAnos ? Number(form.vidaUtilAnos) : null,
-        proximaManutencao: form.proximaManutencao || null,
-        observacoes: form.observacoes || null,
-      }
-      if (editando) {
-        await api.put(`/elementos/${editando.id}`, payload)
-      } else {
-        await api.post('/elementos', payload)
-      }
-      resetForm()
-      setShowForm(false)
-      setEditando(null)
-      fetchTudo()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao salvar elemento')
-    }
+    salvarMutation.mutate({
+      salaoId,
+      elementoTipoId: form.elementoTipoId,
+      nomeCustomizado: form.nomeCustomizado || null,
+      dataInstalacao: form.dataInstalacao || null,
+      condicaoAtual: form.condicaoAtual,
+      vidaUtilAnos: form.vidaUtilAnos ? Number(form.vidaUtilAnos) : null,
+      proximaManutencao: form.proximaManutencao || null,
+      observacoes: form.observacoes || null,
+    })
   }
 
   const handleEditar = (el: Elemento) => {
@@ -85,11 +86,8 @@ export default function ElementosPage() {
   }
 
   const handleExcluir = async (id: string) => {
-    if (!confirm('Excluir este elemento e todos os seus equipamentos?')) return
-    try {
-      await api.delete(`/elementos/${id}`)
-      fetchTudo()
-    } catch { setErro('Erro ao excluir elemento') }
+    if (!await confirmDialog('Excluir este elemento e todos os seus equipamentos?')) return
+    excluirMutation.mutate(id)
   }
 
   const tipoSelecionado = tipos.find((t) => t.id === form.elementoTipoId)
@@ -108,7 +106,7 @@ export default function ElementosPage() {
     return Math.round(restanteAnos * 10) / 10
   }
 
-  if (loading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
+  if (isLoading) return <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Carregando...</div>
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -121,7 +119,7 @@ export default function ElementosPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-            <Link to={`/saloes/${salaoId}`} className="hover:text-blue-500">← {salaoNome}</Link>
+            <Link to={`/saloes/${salaoId}`} className="hover:text-blue-500">← {salao?.congregacao}</Link>
           </div>
           <h1 className="text-xl font-bold text-gray-900">Elementos do Prédio</h1>
         </div>
@@ -241,7 +239,6 @@ export default function ElementosPage() {
 
                 {isOpen && (
                   <div className="px-5 pb-4 border-t border-gray-50 pt-4 space-y-4">
-                    {/* Info do elemento */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       {el.dataInstalacao && (
                         <div>
@@ -275,10 +272,8 @@ export default function ElementosPage() {
                       <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{el.observacoes}</p>
                     )}
 
-                    {/* Equipamentos */}
-                    <EquipamentosSection elementoId={el.id} equipamentos={el.equipamentos || []} onUpdate={fetchTudo} />
+                    <EquipamentosSection elementoId={el.id} equipamentos={el.equipamentos || []} salaoId={salaoId!} />
 
-                    {/* Ações */}
                     <div className="flex gap-2 pt-1">
                       <button onClick={() => handleEditar(el)}
                         className="text-xs text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300">
@@ -300,38 +295,49 @@ export default function ElementosPage() {
   )
 }
 
-function EquipamentosSection({ elementoId, equipamentos, onUpdate }: {
-  elementoId: string; equipamentos: Equipamento[]; onUpdate: () => void
+function EquipamentosSection({ elementoId, equipamentos, salaoId }: {
+  elementoId: string; equipamentos: Equipamento[]; salaoId: string
 }) {
+  const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nome: '', modelo: '', fabricante: '', dataInstalacao: '', garantiaAte: '', proximaManutencao: '', observacoes: '' })
   const [erro, setErro] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      await api.post('/equipamentos', {
-        elementoId,
-        nome: form.nome,
-        modelo: form.modelo || null,
-        fabricante: form.fabricante || null,
-        dataInstalacao: form.dataInstalacao || null,
-        garantiaAte: form.garantiaAte || null,
-        proximaManutencao: form.proximaManutencao || null,
-        observacoes: form.observacoes || null,
-      })
+  const invalidar = () => qc.invalidateQueries({ queryKey: ['elementos', salaoId] })
+
+  const adicionarMutation = useMutation({
+    mutationFn: (payload: any) => api.post('/equipamentos', payload),
+    onSuccess: () => {
       setForm({ nome: '', modelo: '', fabricante: '', dataInstalacao: '', garantiaAte: '', proximaManutencao: '', observacoes: '' })
       setShowForm(false)
-      onUpdate()
-    } catch (err: any) {
-      setErro(err.response?.data?.error || 'Erro ao adicionar equipamento')
-    }
+      invalidar()
+      toast.success('Equipamento adicionado')
+    },
+    onError: (err) => setErro(apiErro(err, 'Erro ao adicionar equipamento')),
+  })
+
+  const excluirMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/equipamentos/${id}`),
+    onSuccess: () => { invalidar(); toast.success('Equipamento excluído') },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    adicionarMutation.mutate({
+      elementoId,
+      nome: form.nome,
+      modelo: form.modelo || null,
+      fabricante: form.fabricante || null,
+      dataInstalacao: form.dataInstalacao || null,
+      garantiaAte: form.garantiaAte || null,
+      proximaManutencao: form.proximaManutencao || null,
+      observacoes: form.observacoes || null,
+    })
   }
 
   const handleExcluir = async (id: string) => {
-    if (!confirm('Excluir equipamento?')) return
-    await api.delete(`/equipamentos/${id}`)
-    onUpdate()
+    if (!await confirmDialog('Excluir equipamento?')) return
+    excluirMutation.mutate(id)
   }
 
   const garantiaVencida = (eq: Equipamento) =>

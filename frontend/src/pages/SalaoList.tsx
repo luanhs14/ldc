@@ -1,17 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import api from '../services/api'
 import type { Salao } from '../types'
 import PaginationControls from '../components/PaginationControls'
-import { getListMeta, type ListMeta } from '../services/pagination'
+import { getListMeta } from '../services/pagination'
 
 export default function SalaoList() {
-  const [saloes, setSaloes] = useState<Salao[]>([])
-  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [sortBy, setSortBy] = useState('congregacao')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [meta, setMeta] = useState<ListMeta>({ page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'congregacao', sortOrder: 'asc' })
 
   const sortKey = `${sortBy}:${sortOrder}`
   const handleSortChange = (val: string) => {
@@ -21,15 +19,17 @@ export default function SalaoList() {
     setSortOrder(order as 'asc' | 'desc')
   }
 
-  const fetchSaloes = () => {
-    api.get('/saloes', { params: { page, pageSize: 10, sortBy, sortOrder } }).then((res) => {
-      setSaloes(res.data)
-      setMeta(getListMeta(res.headers))
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }
+  const { data, isLoading } = useQuery({
+    queryKey: ['saloes', { page, sortBy, sortOrder }],
+    queryFn: async () => {
+      const res = await api.get('/saloes', { params: { page, pageSize: 10, sortBy, sortOrder } })
+      return { items: res.data as Salao[], meta: getListMeta(res.headers) }
+    },
+    placeholderData: (prev) => prev,
+  })
 
-  useEffect(() => { fetchSaloes() }, [page, sortBy, sortOrder])
+  const saloes = data?.items ?? []
+  const meta = data?.meta ?? { page: 1, pageSize: 10, totalCount: 0, totalPages: 1, sortBy: 'congregacao', sortOrder: 'asc' as const }
 
   return (
     <div className="space-y-5">
@@ -55,7 +55,7 @@ export default function SalaoList() {
         </select>
       </div>
 
-      {loading ? (
+      {isLoading && !data ? (
         <div className="text-center py-16 text-gray-400 text-sm">Carregando...</div>
       ) : saloes.length === 0 ? (
         <div className="text-center py-16 text-gray-400 text-sm">Nenhum salão encontrado</div>
@@ -76,7 +76,7 @@ export default function SalaoList() {
                       <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">{salao.codigoBRA}</span>
                     </div>
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      
+
                       {salao.bairro && <span className="text-xs text-gray-400">{salao.bairro}</span>}{salao.congregacoes && salao.congregacoes.length > 0 && (
                         <>
                           <span className="text-xs text-gray-300">·</span>

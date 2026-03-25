@@ -15,6 +15,8 @@ import IncidentesPage from './pages/IncidentesPage'
 import PessoasPage from './pages/PessoasPage'
 import FinanceiroPage from './pages/FinanceiroPage'
 import UsuariosPage from './pages/UsuariosPage'
+import { Toaster } from 'sonner'
+import { ConfirmModal } from './components/ConfirmModal'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -34,6 +36,8 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthProvider>
+      <Toaster position="bottom-right" richColors closeButton />
+      <ConfirmModal />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
